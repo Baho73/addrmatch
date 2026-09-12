@@ -1,0 +1,250 @@
+<GraceChangePlan graceVersion="4.0" status="approved">
+  <C-ADDRMATCH-PHASE-A>
+    <IntentSummary>Создать пакет `addrmatch/` с нуля по концепции v0.2: восемь модулей (M-NUMERALS, M-NORMALIZER, M-PARSER, M-INDEX, M-RANKER, M-DECIDER, M-MATCHER, M-RUN), тесты, симуляция диалога, readme. Порядок — шаги A0–A7 концепции: сначала каркас и метрики (чтобы каждый следующий шаг сразу измерялся), затем модули по потоку данных, затем обучение ранкера в тайм-боксе, затем исходы диалога и readme. Противоречия сняты на этапе спеки (triz-resolution.md): блокинг по словарю имён, тяжёлое только офлайн, порог из стоимости N — план компромиссов не содержит. Ponytail lite: минимальный код внутри контрактов, никаких заготовок под ГАР кроме стабильных сигнатур Index.</IntentSummary>
+    <BaselineAssertions>
+      <MustNotExist>
+        <Value>M-NUMERALS</Value>
+        <Value>M-NORMALIZER</Value>
+        <Value>M-PARSER</Value>
+        <Value>M-INDEX</Value>
+        <Value>M-RANKER</Value>
+        <Value>M-DECIDER</Value>
+        <Value>M-MATCHER</Value>
+        <Value>M-RUN</Value>
+        <Value>addrmatch/__init__.py</Value>
+        <Value>run.py</Value>
+      </MustNotExist>
+      <MustExist>
+        <Value>test_task_adress_match/data/etalon.jsonl</Value>
+        <Value>test_task_adress_match/data/adresses_labeled.jsonl</Value>
+        <Value>test_task_adress_match/data/sample_input.jsonl</Value>
+        <Value>docs/concept.md</Value>
+      </MustExist>
+    </BaselineAssertions>
+    <TargetAssertions>
+      <MustExist>
+        <Value>M-NUMERALS</Value>
+        <Value>M-NORMALIZER</Value>
+        <Value>M-PARSER</Value>
+        <Value>M-INDEX</Value>
+        <Value>M-RANKER</Value>
+        <Value>M-DECIDER</Value>
+        <Value>M-MATCHER</Value>
+        <Value>M-RUN</Value>
+        <Value>addrmatch/__init__.py</Value>
+        <Value>addrmatch/numerals.py</Value>
+        <Value>addrmatch/normalizer.py</Value>
+        <Value>addrmatch/parser.py</Value>
+        <Value>addrmatch/index.py</Value>
+        <Value>addrmatch/ranker.py</Value>
+        <Value>addrmatch/decider.py</Value>
+        <Value>addrmatch/matcher.py</Value>
+        <Value>run.py</Value>
+        <Value>requirements.txt</Value>
+        <Value>readme.md</Value>
+        <Value>tools/simulate_dialog.py</Value>
+      </MustExist>
+      <MustVerify>
+        <Module>M-NUMERALS</Module>
+        <Module>M-NORMALIZER</Module>
+        <Module>M-PARSER</Module>
+        <Module>M-INDEX</Module>
+        <Module>M-RANKER</Module>
+        <Module>M-DECIDER</Module>
+        <Module>M-MATCHER</Module>
+        <Module>M-RUN</Module>
+      </MustVerify>
+      <MustOwn>
+        <Owner>GD-MAIN</Owner>
+        <Anchor>M-MATCHER</Anchor>
+      </MustOwn>
+      <MustOwn>
+        <Owner>VD-MAIN</Owner>
+        <Anchor>V-M-MATCHER</Anchor>
+      </MustOwn>
+      <MustLink>
+        <From>M-NORMALIZER</From>
+        <To>M-NUMERALS</To>
+      </MustLink>
+      <MustLink>
+        <From>M-MATCHER</From>
+        <To>M-DECIDER</To>
+      </MustLink>
+      <MustLink>
+        <From>M-RUN</From>
+        <To>M-MATCHER</To>
+      </MustLink>
+      <MustContain>
+        <File>addrmatch/matcher.py</File>
+        <Text>START_MODULE_CONTRACT</Text>
+      </MustContain>
+      <MustContain>
+        <File>run.py</File>
+        <Text>ms_per_request_p95</Text>
+      </MustContain>
+      <MustNotContain>
+        <File>addrmatch/normalizer.py</File>
+        <Text>from addrmatch.index</Text>
+      </MustNotContain>
+      <MustPassCommand>
+        <Command>python -m pytest -q</Command>
+        <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+        <Command>python tools/simulate_dialog.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+      </MustPassCommand>
+    </TargetAssertions>
+    <DurableScope>
+      <GraphAnchors>
+        <M-NUMERALS />
+        <M-NORMALIZER />
+        <M-PARSER />
+        <M-INDEX />
+        <M-RANKER />
+        <M-DECIDER />
+        <M-MATCHER />
+        <M-RUN />
+      </GraphAnchors>
+      <VerificationAnchors>
+        <V-M-NUMERALS />
+        <V-M-NORMALIZER />
+        <V-M-PARSER />
+        <V-M-INDEX />
+        <V-M-RANKER />
+        <V-M-DECIDER />
+        <V-M-MATCHER />
+        <V-M-RUN />
+      </VerificationAnchors>
+      <ContextArtifact>technology.xml</ContextArtifact>
+    </DurableScope>
+    <ObservedWriteScope>
+      <Glob>addrmatch/**</Glob>
+      <Glob>tests/**</Glob>
+      <Glob>tools/**</Glob>
+      <File>run.py</File>
+      <File>requirements.txt</File>
+      <File>pytest.ini</File>
+      <File>readme.md</File>
+      <File>preds.jsonl</File>
+      <File>.gitignore</File>
+    </ObservedWriteScope>
+    <ImplementationPlan>
+      <T-001>
+        <Title>A0 — каркас пакета, run.py с метриками ТЗ и --predictions, замер времени, тривиальный матчер</Title>
+        <DependsOn></DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`addrmatch/__init__.py`, `addrmatch/matcher.py` (заглушка `match()` → reject), `run.py`, `requirements.txt` (rapidfuzz, scikit-learn, numpy, pytest), `pytest.ini`.</Criterion>
+          <Criterion>run.py читает оба JSONL (UTF-8), вызывает `match()` на каждой строке, печатает JSON ровно с 9 ключами ТЗ; `--predictions` пишет JSONL `{id, candidates, scores}`; латентность — монотонные часы вокруг `match()`, без загрузки данных.</Criterion>
+          <Criterion>Все файлы с MODULE_CONTRACT / MODULE_MAP / CHANGE_SUMMARY; лог-маркеры `[Run][main][METRICS]`. `tools/check_preds.py` проверяет число строк и формат `{id, candidates, scores}`.</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+          <Command>python tools/check_preds.py preds.jsonl --expect 500</Command>
+        </Verification>
+      </T-001>
+      <T-002>
+        <Title>A1 — numerals.py и normalizer.py с тестами и тестом графа импортов</Title>
+        <DependsOn>T-001</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`numerals.words_to_digits`: «сто шестьдесят три»→163, «два к два»→2к2, «восемнадцать к а»→18кА, «сорок восемь короче бэ»→48Б (мусор между), «дватцать васемь»→28 (фонетические варианты числительных), неоднозначность → первое прочтение + флаг.</Criterion>
+          <Criterion>`normalizer.normalize(text, channel)`: регистр, ё→е, латиница-двойники (webchat), стоп-слова, сокращения (ул., пр-т, д., к., корп., стр., лит.), склейка «18 а»→«18а», обрезка > 512 с флагом; идемпотентность; `NORMALIZER_VERSION` = хэш правил.</Criterion>
+          <Criterion>≥ 20 тестов в `tests/test_numerals.py` и `tests/test_normalizer.py`; `tests/test_imports.py` проверяет, что numerals/normalizer не импортируют index/данные (N5).</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python -m pytest -q tests/test_numerals.py tests/test_normalizer.py tests/test_imports.py</Command>
+        </Verification>
+      </T-002>
+      <T-003>
+        <Title>A2 — parser.py: тип/улица/дом/корпус/литера, has_address_cues, ambiguous_number, city_hint</Title>
+        <DependsOn>T-002</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`parse(norm_text, street_types, has_name) -> ParseResult` со слотами по concept §5.2; формы дома 16 / 16а / 16к2 / 16/2 / 16-18 (диапазон → флаг) / д.16 кв.5 (кв. отброшена); `street` необязателен; город не извлекается — остаток до типа в `city_hint`.</Criterion>
+          <Criterion>На 500 labeled: дом выделен в ≥ 95 % строк, где он есть в эталоне (скрипт-проверка печатает долю); `has_address_cues` ловит ≥ 90 % негативов вида 1 и даёт ложный «не адрес» ≤ 1 % на позитивах (H4).</Criterion>
+          <Criterion>`tests/test_parser.py` — формы дома, cues, диапазон, слово-ответ на дозапрос.</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python -m pytest -q tests/test_parser.py</Command>
+          <Command>python tools/check_parser.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+        </Verification>
+      </T-003>
+      <T-004>
+        <Title>A3 — index.py BruteForce + ranker.py ручные веса + decider.py + рабочий match(); H1, H1a, H2, H6</Title>
+        <DependsOn>T-003</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`BruteForceIndex(etalon)`: словарь имён (нормализованных той же версией, хэш проверяется), предсчитанные фонетические ключи и char-3-грам матрица; методы `ready`, `has_name`, `resolve_city` → CityResolution (фаззи по 8 городам, θ_city), `candidates(street_q, k, scope)` (rapidfuzz cdist + фонетика + n-грам), `resolve_objects`, `houses`, `name_freq`; бюджет ≤ 1 мс на запрос.</Criterion>
+          <Criterion>`Ranker` с таблицей фичей (тип, диапазон, значение при пропуске) и ручными весами через сигмоиду → p; `explain` — разложение по сигналам.</Criterion>
+          <Criterion>`Decider(costs)`: порядок правил §5.5, пороги из N, `options` ≤ 3, `slots_resolved`, `missing_slot`; проекция в формат ТЗ по таблице §5.5.</Criterion>
+          <Criterion>run.py на labeled: top1 ≥ 0.85, top3 ≥ 0.92, p95 ≤ 10 мс (H1, H6). Абляции через флаги `--ablate whole_string` и `--ablate no_phonetic`: разрез ≥ +5 п.п., фонетика ≥ +5 п.п. на voice (H1a, H2) — результаты в readme.</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --ablate whole_string</Command>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --ablate no_phonetic</Command>
+          <Command>python -m pytest -q tests/test_index.py tests/test_decider.py</Command>
+        </Verification>
+      </T-004>
+      <T-005>
+        <Title>A4 — разбор ошибок на labeled, правки нормализатора/весов, список типов ошибок для readme</Title>
+        <DependsOn>T-004</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`tools/errors_report.py` печатает промахи top-1 с классификацией (улица не найдена / дом не разобран / город / негатив принят / позитив отвергнут) и сохраняет `docs/errors-a4.md`.</Criterion>
+          <Criterion>После правок все тесты зелёные, top1 не ниже, чем до правок; список типов ошибок готов для раздела «где ломается».</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python tools/errors_report.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+          <Command>python -m pytest -q</Command>
+        </Verification>
+      </T-005>
+      <T-006>
+        <Title>A5 (тайм-бокс 1 ч) — логрег с interaction-фичами, калибровка по стратам, reliability_report; H3, H3a, H5</Title>
+        <DependsOn>T-005</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`Ranker.fit(labeled, etalon, seed)` — сплит 75/25 стратифицированный по каналу и негативам; обучение на парах (1 позитив + кандидаты выше отсечки; негативы вида 2 — все как 0); фичи + interaction (`name_freq × city_match`, `name_freq × phonetic`, `channel × levenshtein`); пост-калибровка по стратам {channel} × {freq_class} × {city_status}; модель сохраняется в `addrmatch/ranker_model.json` (веса, калибраторы) — без pickle.</Criterion>
+          <Criterion>`Ranker.reliability_report()` печатает бины надёжности по стратам; ни один бин не отклоняется > 0.1; train/val top-1 расходятся ≤ 5 п.п. (H3a).</Criterion>
+          <Criterion>При N = 10 на val: ошибок `answer` ≤ 3 при покрытии answer+answer_soft ≥ 0.75 (H3); негативы вида 2 → reject/ask_street ≥ 85 % (H5).</Criterion>
+          <Criterion>Переключение `ranker: logreg|manual` в конфиге; при срыве тайм-бокса — конфиг остаётся `manual`, факт записывается в readme «что дальше».</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python tools/train_ranker.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --seed 42</Command>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+          <Command>python -m pytest -q tests/test_ranker.py</Command>
+        </Verification>
+      </T-006>
+      <T-007>
+        <Title>A6 — API match(raw, channel, slots, asked_slot, scope), семь исходов, слоты id/текст, симуляция диалога; H12</Title>
+        <DependsOn>T-006</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`Matcher.match()` принимает слоты-id (точный фильтр) и слоты-текст (фаззи, приоритет над raw); при `asked_slot != None` cues не требуются; никогда не бросает (`reject` + `error`); `ready()` — ошибки загрузки.</Criterion>
+          <Criterion>`tests/test_matcher.py` — по одному тесту на каждый из 7 исходов, тест порядка правил (одноимённая улица в двух городах → ask_city, а не confirm), тест проекции в формат ТЗ, тест «никогда не бросает».</Criterion>
+          <Criterion>`tools/simulate_dialog.py`: после `ask_house` + истинный дом → `answer` ≥ 95 %; после `ask_city` + истинный city_id → `answer`/`confirm` ≥ 95 % (H12).</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python -m pytest -q tests/test_matcher.py</Command>
+          <Command>python tools/simulate_dialog.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+        </Verification>
+      </T-007>
+      <T-008>
+        <Title>A7 — readme.md по критериям приёмки ТЗ + финальный прогон на чистом venv</Title>
+        <DependsOn>T-007</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>readme.md: пошаговый подход (что со строкой и в каком порядке, почему), что пробовали и отбросили (ссылка на docs/approaches.md, абляции), где ломается (docs/errors-a4.md), замер времени словами ТЗ (железо, Python, что в замере, что нет), допущения (тот же эталон, N = 10), исходы диалога и дозапрос, «что дальше» (ГАР/словарь имён, LLM офлайн, answer_soft). Финальные цифры run.py вставлены.</Criterion>
+          <Criterion>Чистый venv: `python -m venv .venv-check`, `pip install -r requirements.txt`, `python run.py ...` проходит; `.venv-check` в .gitignore.</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python -m pytest -q</Command>
+          <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+        </Verification>
+      </T-008>
+      <T-009>
+        <Title>Durable — граф (GD-MAIN: 8 модулей, DF-*), верификация (VD-MAIN: 8 V-M-* с командами и маркерами), technology.xml (зависимости)</Title>
+        <DependsOn>T-008</DependsOn>
+        <AcceptanceCriteria>
+          <Criterion>`.grace/graph/main.xml`: M-NUMERALS, M-NORMALIZER, M-PARSER, M-INDEX, M-RANKER, M-DECIDER, M-MATCHER, M-RUN с Purpose/Path/Depends/Exports; DF-MATCH (raw → decision) и DF-METRICS; index.xml Owns заполнен.</Criterion>
+          <Criterion>`.grace/verification/main.xml`: V-M-* для каждого модуля с командами из задач и лог-маркерами `[Module][function][BLOCK]`; index.xml Owns заполнен.</Criterion>
+          <Criterion>`technology.xml` OperationalConstraints дополнены: rapidfuzz, scikit-learn, numpy закреплены версиями; модель ранкера — JSON, не pickle.</Criterion>
+        </AcceptanceCriteria>
+        <Verification>
+          <Command>python -m pytest -q</Command>
+        </Verification>
+      </T-009>
+    </ImplementationPlan>
+  </C-ADDRMATCH-PHASE-A>
+</GraceChangePlan>
