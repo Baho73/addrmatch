@@ -1,0 +1,4 @@
+rapidfuzz>=3.14
+scikit-learn>=1.5
+numpy>=1.26
+pytest>=9.0
