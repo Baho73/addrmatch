@@ -100,3 +100,55 @@ def test_ordinary_word_ending_in_numeral_syllable_not_split():
 def test_letter_name_bare_no_trigger_not_merged_here():
     # без триггера (к/корпус/короче) numerals не трогает хвост - это забота normalizer (18а)
     assert words_to_digits("восемнадцать а") == ("18 а", False)
+
+
+# START_CHANGE_SUMMARY (доп.)
+#   C-ADDRMATCH-PHASE-A T-003b: тесты на доводку house_found_rate (дробь-триггер, опечатки
+#   триггеров, голая многобуквенная буква-имя, слипание триггер+суффикс, идемпотентность).
+# END_CHANGE_SUMMARY
+
+
+def test_drob_trigger_with_digit():
+    # "дробь" - триггер наравне с "к"/"корпус" (T-003b, 19 промахов гейта T-003)
+    assert words_to_digits("семь дробь два") == ("7к2", False)
+
+
+def test_drob_trigger_typo_and_korpus_typo():
+    # "тробь" (опечатка "дробь", д->т) и "карпус" (опечатка "корпус") ловятся через ту же
+    # фонетическую свёртку, что и числительные - без отдельного списка вариантов
+    assert words_to_digits("сорок шесть тробь один") == ("46к1", False)
+    assert words_to_digits("семь карпус один") == ("7к1", False)
+
+
+def test_bare_multiletter_name_no_trigger():
+    # голая буква-имя без триггера (T-003b, ~15 промахов): "195 пэ"->195П, "два гэ"->2Г
+    assert words_to_digits("сто девяносто пять пэ") == ("195П", False)
+    assert words_to_digits("два гэ") == ("2Г", False)
+
+
+def test_bare_letter_ka_is_letter_k_not_corpus_a():
+    # "ка" - фонетическое имя буквы К (не "к"+"а"): голое "3 ка" -> "3К"
+    assert words_to_digits("три ка") == ("3К", False)
+
+
+def test_merged_kA_tail_is_idempotent_not_reread_as_ka_name():
+    # регрессия: уже свёрнутый триггером хвост "26кА" при повторном проходе ретокенизируется в
+    # один смешанный по регистру токен "кА" - это НЕ то же самое, что имя буквы "ка" (нижний
+    # регистр); без защиты по регистру он бы испортился в "26К" (T-003b)
+    assert words_to_digits("26кА") == ("26кА", False)
+
+
+def test_glued_trigger_prefix_with_numeral_and_letter():
+    # слипание триггер+суффикс без пробела (T-003b): "кдва"->к+2, "кб"->к+Б
+    assert words_to_digits("три кдва") == ("3к2", False)
+    assert words_to_digits("семьдесят восемь кб") == ("78кБ", False)
+
+
+def test_typo_dvadtsat_phonetic_alias():
+    # "двадтсать" ("ц" услышана как "тс") - опечатка, не покрытая посимвольной сверткой
+    assert words_to_digits("двадтсать пять") == ("25", False)
+
+
+def test_corpus_abbreviated_letter_digit_glue_composite():
+    # "корпус" + слипшийся код "буква+цифра" ("16 корпус п1" -> "16кП1", T-003b bucket 4)
+    assert words_to_digits("шестнадцать корпус п1") == ("16кП1", False)

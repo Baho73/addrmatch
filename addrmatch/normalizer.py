@@ -15,6 +15,10 @@
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-002: normalizer.py — регистр/ё/латиница-двойники (webchat)/пунктуация/
 #   сокращения/стоп-слова/words_to_digits/склейки, идемпотентность, NORMALIZER_VERSION.
+#   C-ADDRMATCH-PHASE-A T-003b: доводка гейта T-003. "а" после "дробь" больше не теряется
+#   стоп-словом (условие сохранения литеры переведено на numerals.is_house_trigger - тот же
+#   список триггеров, включая "дробь" и опечатки, что и в numerals, без дублирования); новый
+#   regex-разрез "д"+число слитно без пробела ("д67" -> "д 67" -> "67" через _ABBREVIATIONS).
 # END_CHANGE_SUMMARY
 
 """normalizer — строка -> строка перед Parser (docs/concept.md §5.1)."""
@@ -25,7 +29,13 @@ import hashlib
 import re
 from dataclasses import dataclass
 
-from addrmatch.numerals import LETTER_NAMES, NUMERALS_VERSION, is_numeral_word, words_to_digits
+from addrmatch.numerals import (
+    LETTER_NAMES,
+    NUMERALS_VERSION,
+    is_house_trigger,
+    is_numeral_word,
+    words_to_digits,
+)
 
 MAX_LEN = 512
 
@@ -129,6 +139,16 @@ def _split_digit_letter_glue(text: str) -> str:
     return _DIGIT_LETTER_GLUE_RE.sub(repl, text)
 
 
+# Маркер дома "д" слитый с числом без пробела ("д67" -> "67", T-003b): лукбехайнд требует, чтобы
+# "д" была отдельным токеном (начало строки/после пробела), а не концом более длинного слова
+# ("город5" не режется - там перед "д" есть кириллица "горо").
+_DOM_MARKER_GLUE_RE = re.compile(r"(?<![а-яёА-ЯЁ])д(\d+)")
+
+
+def _split_dom_marker_glue(text: str) -> str:
+    return _DOM_MARKER_GLUE_RE.sub(r"д \1", text)
+
+
 def _latin_to_cyrillic(text: str, channel: str) -> str:
     if channel != "webchat":
         return text
@@ -155,7 +175,10 @@ def _drop_stopwords(text: str) -> str:
             continue
         if tok == "а":
             prev = kept[-1] if kept else None
-            if prev is not None and (is_numeral_word(prev) or prev in {"к", "корпус", "корп", "короче"}):
+            # T-003b: раньше проверялся жёсткий список {"к","корпус","корп","короче"} - "дробь"
+            # ("26 дробь а" -> 26кА) в него не попадал, и "а" терялась. is_house_trigger даёт
+            # тот же список через фонетическую свёртку + опечатки (карпус/тробь) бесплатно.
+            if prev is not None and (is_numeral_word(prev) or is_house_trigger(prev)):
                 kept.append(tok)
             continue
         if tok == "с":
@@ -205,6 +228,7 @@ def normalize(text: str, channel: str = "voice") -> NormResult:
     # START_BLOCK_CLEANUP
     text = _punctuation_to_spaces(text)
     text = _split_digit_letter_glue(text)
+    text = _split_dom_marker_glue(text)
     text = _expand_abbreviations(text)
     text = _drop_stopwords(text)
     # END_BLOCK_CLEANUP

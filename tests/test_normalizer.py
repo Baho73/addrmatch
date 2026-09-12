@@ -103,6 +103,24 @@ def test_normalizer_version_is_stable_hex12():
     assert _build_version() == NORMALIZER_VERSION
 
 
+# START_CHANGE_SUMMARY (доп.)
+#   C-ADDRMATCH-PHASE-A T-003b: тесты на доводку house_found_rate - "а" после "дробь" не
+#   теряется стоп-словом; "д"+число слитно без пробела разрезается и маркер отбрасывается.
+# END_CHANGE_SUMMARY
+
+
+def test_letter_a_survives_after_drob_trigger():
+    # раньше "а" терялась стоп-словом: "дробь" не входила в список триггеров-исключений (T-003b)
+    result = normalize("дом 26 дробь а", channel="voice")
+    assert result.text == "26кА"
+
+
+def test_dom_marker_glued_to_digits_split_and_dropped():
+    # "д67" (маркер дома "д" слитый с числом без пробела) -> "67" (T-003b)
+    result = normalize("Академика Киреснкого д67", channel="voice")
+    assert result.text == "академика киреснкого 67"
+
+
 def test_idempotent_on_50_real_labeled_strings():
     rows = []
     with DATA_PATH.open(encoding="utf-8") as f:

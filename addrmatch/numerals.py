@@ -10,7 +10,8 @@
 # START_MODULE_MAP
 #   words_to_digits - str -> (str, ambiguous: bool); основной публичный вход модуля
 #   is_numeral_word - True, если токен (после фонетической свёртки) сам является числительным
-#   LETTER_NAMES - словарь "слово-литера" (а/бэ/вэ/...) -> заглавная буква для normalizer
+#   is_house_trigger - True, если токен - триггер хвоста дома (к/корпус/дробь/короче + опечатки)
+#   LETTER_NAMES - словарь "слово-литера" (а/бэ/вэ/пэ/ка/...) -> заглавная буква для normalizer
 #   NUMERALS_VERSION - версия словаря числительных (входит в NORMALIZER_VERSION)
 # END_MODULE_MAP
 #
@@ -18,6 +19,13 @@
 #   C-ADDRMATCH-PHASE-A T-002: numerals.py — словарь числительных 1-999 с фонетическими
 #   вариантами (свёртка по озвончению/оглушению и редукции гласных), разбор слипаний
 #   ("горькогосто" -> "горького"+"сто"), свёртка корпус/литера ("к а" -> "кА", "короче бэ" -> "Б").
+#   C-ADDRMATCH-PHASE-A T-003b: доводка гейта T-003 (house_found_rate 0.865 -> цель 0.95).
+#   "дробь" — триггер наравне с "к/корпус" (7 дробь 2 -> 7к2); триггеры сравниваются через
+#   _collapse (карпус/корпуз/тробь — опечатки бьют в те же ключи, без отдельного списка);
+#   LETTER_NAMES расширен до алфавита эталона (е/ж/п/ка/эс/эф); новая свёртка "число + голая
+#   МНОГОбуквенная буква-имя без триггера" (195 пэ -> 195П, два гэ -> 2Г); разбор слипания
+#   триггер+суффикс без пробела ("кдва" -> к+2, "кб" -> к+Б); опечатка "двадтсать" (доб. в
+#   _TYPO_ALIASES, посимвольная свёртка её не покрывает). NUMERALS_VERSION v1 -> v2.
 # END_CHANGE_SUMMARY
 
 """numerals — русские числительные словами -> цифры (docs/concept.md §5.1)."""
@@ -48,22 +56,31 @@ _HUNDREDS = {
     "шестьсот": 600, "семьсот": 700, "восемьсот": 800, "девятьсот": 900,
 }
 
-# Буквы-литеры дома: "бэ"/"вэ"/"дэ"/"гэ" — озвученные названия букв; голая "а" — тоже частый
-# способ произнести литеру ("15 а"). Ограничено А-Д: дальше в учебных данных не встречается.
+# Буквы-литеры дома: "бэ"/"вэ"/"дэ"/"гэ"/... — озвученные названия букв; голая "а" — тоже частый
+# способ произнести литеру ("15 а"). T-003b: расширено до алфавита, встречающегося в эталоне
+# (А,Б,В,Г,Д,К,П + Е/Ж/С/Ф про запас) + "ка"/"эс"/"эф" — фонетические имена букв К/С/Ф.
 LETTER_NAMES = {
     "а": "А",
     "б": "Б", "бэ": "Б",
     "в": "В", "вэ": "В",
     "г": "Г", "гэ": "Г",
     "д": "Д", "дэ": "Д",
+    "е": "Е",
+    "ж": "Ж", "жэ": "Ж",
+    "п": "П", "пэ": "П",
+    "ка": "К",
+    "эс": "С",
+    "эф": "Ф",
 }
 
-# Триггеры хвоста дома. TRIGGER_K даёт формат N + "к" + X (число или литера).
-# TRIGGER_KOROCHE даёт формат N + ЛИТЕРА без "к" (сорок восемь короче бэ -> 48Б).
-_TRIGGER_K = {"к", "корпус", "корп"}
-_TRIGGER_KOROCHE = {"короче"}
+# Триггеры хвоста дома (сырые слова; опечатки не перечисляем - см. _TRIGGER_K/_TRIGGER_KOROCHE
+# ниже, построенные через _collapse, чтобы "карпус"/"корпуз"/"тробь" ловились автоматически).
+# _TRIGGER_K_WORDS даёт формат N + "к" + X (число или литера); "дробь" - T-003b, тот же формат
+# ("7 дробь 2" -> 7к2). _TRIGGER_KOROCHE_WORDS даёт формат N + ЛИТЕРА без "к" (короче бэ -> 48Б).
+_TRIGGER_K_WORDS = {"к", "корпус", "корп", "дробь"}
+_TRIGGER_KOROCHE_WORDS = {"короче"}
 
-NUMERALS_VERSION = "v1"
+NUMERALS_VERSION = "v2"
 # END_BLOCK_DICT
 
 # START_BLOCK_PHONETIC
@@ -94,6 +111,18 @@ NUMERAL_LOOKUP: dict[str, tuple[int, int]] = {
     _collapse(_w): (_v, _TIER_OF[_w]) for _w, _v in _ALL_WORDS.items()
 }
 
+# Опечатки, которые НЕ покрывает посимвольная свёртка озвончения/редукции выше (вставка/замена
+# слога, а не одной буквы): "двадтсать" - "ц" услышана как "тс" (docs T-003b, из adresses_labeled).
+_TYPO_ALIASES = {"двадтсать": "двадцать"}
+for _typo, _canonical in _TYPO_ALIASES.items():
+    NUMERAL_LOOKUP[_collapse(_typo)] = (_ALL_WORDS[_canonical], _TIER_OF[_canonical])
+
+# Триггеры хвоста дома через ту же свёртку, что и числительные - "карпус"/"корпуз"/"тробь"
+# (опечатки корпус/дробь) ловятся автоматически, без отдельного списка вариантов (T-003b).
+_TRIGGER_K = {_collapse(_w) for _w in _TRIGGER_K_WORDS}
+_TRIGGER_KOROCHE = {_collapse(_w) for _w in _TRIGGER_KOROCHE_WORDS}
+_ALL_TRIGGERS = _TRIGGER_K | _TRIGGER_KOROCHE
+
 
 def is_numeral_word(word: str) -> bool:
     """True, если word целиком является числительным (цифрой или словом-числительным)."""
@@ -102,6 +131,14 @@ def is_numeral_word(word: str) -> bool:
     if word.isdigit():
         return True
     return _collapse(word) in NUMERAL_LOOKUP
+
+
+def is_house_trigger(word: str) -> bool:
+    """True, если word (с опечатками/фонетикой) - триггер хвоста дома (к/корпус/корп/дробь/
+    короче); используется normalizer'ом, чтобы не терять литеру после "дробь" (T-003b)."""
+    if not word:
+        return False
+    return _collapse(word) in _ALL_TRIGGERS
 # END_BLOCK_PHONETIC
 
 # START_BLOCK_SEGMENT
@@ -124,6 +161,17 @@ def _segment_word(word: str) -> list[tuple]:
             if all(p[0] == "NUM" for p in left_parts):
                 value, tier = NUMERAL_LOOKUP[_collapse(right)]
                 return left_parts + [("NUM", value, tier)]
+
+    # Триггер "к" слипся со следующим словом без пробела ("кдва" -> "к"+2, "кб" -> "к"+"б",
+    # T-003b) - только префикс "к" (единственный однобуквенный триггер) и только когда слово
+    # целиком не является само по себе именем буквы (иначе "ка" перестанет читаться как литера К).
+    if len(word) > 1 and word[0].lower() == "к" and word.lower() not in LETTER_NAMES:
+        rest = word[1:]
+        if _collapse(rest) in NUMERAL_LOOKUP:
+            value, tier = NUMERAL_LOOKUP[_collapse(rest)]
+            return [("TEXT", word[0]), ("NUM", value, tier)]
+        if rest.lower() in LETTER_NAMES:
+            return [("TEXT", word[0]), ("TEXT", rest)]
 
     return [("TEXT", word)]
 
@@ -215,23 +263,51 @@ def _combine_tiers(flat: list[dict]) -> bool:
 
 
 def _merge_literal(flat: list[dict]) -> None:
-    """Свернуть хвост дома: NUM (к|корпус) (NUM|литера) -> "NкX"; NUM короче литера -> "NX"."""
+    """Свернуть хвост дома: NUM (к|корпус|дробь,опечатки) (NUM|литера) -> "NкX";
+    NUM короче литера -> "NX". Триггер сравнивается через _collapse (карпус/корпуз/тробь)."""
     i = 1
     while i + 4 < len(flat):
         cur, gap1, mid, gap2, nxt = flat[i], flat[i + 1], flat[i + 2], flat[i + 3], flat[i + 4]
         if cur["kind"] != "num" or not _is_blank_gap(gap1) or not _is_blank_gap(gap2):
             i += 2
             continue
-        mid_word = mid["text"].lower() if mid["kind"] == "text" else None
+        mid_key = _collapse(mid["text"]) if mid["kind"] == "text" else None
         nxt_is_letter = nxt["kind"] == "text" and nxt["text"].lower() in LETTER_NAMES
-        if mid_word in _TRIGGER_K and (nxt["kind"] == "num" or nxt_is_letter):
+        if mid_key in _TRIGGER_K and (nxt["kind"] == "num" or nxt_is_letter):
             tail = str(nxt["value"]) if nxt["kind"] == "num" else LETTER_NAMES[nxt["text"].lower()]
             flat[i] = {"kind": "text", "text": f"{cur['value']}к{tail}"}
             del flat[i + 1:i + 5]
             continue
-        if mid_word in _TRIGGER_KOROCHE and nxt_is_letter:
+        if mid_key in _TRIGGER_KOROCHE and nxt_is_letter:
             flat[i] = {"kind": "text", "text": f"{cur['value']}{LETTER_NAMES[nxt['text'].lower()]}"}
             del flat[i + 1:i + 5]
+            continue
+        i += 2
+
+
+def _merge_bare_letter_name(flat: list[dict]) -> None:
+    """Число + голая МНОГОБУКВЕННАЯ буква-имя без триггера ("два гэ" -> "2Г", "195 пэ" -> "195П",
+    T-003b). Однобуквенные формы (а/б/.../е/п) сюда не относятся - без триггера их в нижнем
+    регистре склеивает normalizer (18а), см. test_letter_name_bare_no_trigger_not_merged_here.
+    nxt["text"] == .lower() - обязательное условие идемпотентности: уже свёрнутый триггером
+    хвост "26кА" на повторном проходе ретокенизируется в ОДИН смешанный по регистру токен "кА"
+    (буквы к/А - один символьный класс без учёта регистра) - это не то же самое, что фонетическое
+    имя буквы "ка" (нижний регистр), которое здесь распознаём; без проверки регистра "26кА" на
+    втором проходе портился бы в "26К".
+    """
+    i = 1
+    while i + 2 < len(flat):
+        cur, gap, nxt = flat[i], flat[i + 1], flat[i + 2]
+        if (
+            cur["kind"] == "num"
+            and _is_blank_gap(gap)
+            and nxt["kind"] == "text"
+            and len(nxt["text"]) >= 2
+            and nxt["text"] == nxt["text"].lower()
+            and nxt["text"] in LETTER_NAMES
+        ):
+            flat[i] = {"kind": "text", "text": f"{cur['value']}{LETTER_NAMES[nxt['text']]}"}
+            del flat[i + 1:i + 3]
             continue
         i += 2
 # END_BLOCK_PIPELINE
@@ -249,6 +325,7 @@ def words_to_digits(text: str) -> tuple[str, bool]:
     _peel_glued_prefix(flat)
     ambiguous = _combine_tiers(flat)
     _merge_literal(flat)
+    _merge_bare_letter_name(flat)
     result = "".join(item["text"] for item in flat)
     return result, ambiguous
     # END_BLOCK_RUN
