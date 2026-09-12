@@ -15,10 +15,9 @@
 #   C-ADDRMATCH-PHASE-A T-001: каркас run.py — метрики ТЗ, --predictions, замер времени вокруг match()
 #   C-ADDRMATCH-PHASE-A T-004: --N (стоимость ложного answer, N4) пробрасывается в Matcher;
 #   --channel voice|webchat фильтрует строки до подсчёта метрик (H2 — абляция на voice-подмножестве).
-#   C-ADDRMATCH-PHASE-A T-006: --ranker logreg|manual; без флага — logreg, если addrmatch/ranker_model.json
-#   существует И модель прошла гейты обучения (JSON-поле meets_gates, ставит tools/train_ranker.py),
-#   иначе manual (fallback внутри Matcher тоже есть — двойная подстраховка). Явный --ranker logreg
-#   игнорирует meets_gates — форсирует загрузку, что бы ни было в модели.
+#   C-ADDRMATCH-PHASE-A T-006: --ranker logreg|manual.
+#   post-A follow-up: без флага — всегда manual (детерминированно, не зависит от meets_gates в JSON);
+#   логрег только явным --ranker logreg. Причина: на всех 500 labeled логрег хуже ручных весов.
 # END_CHANGE_SUMMARY
 
 """run.py — точка входа ТЗ (см. test_task_adress_match/README.md «Критерии приёмки»)."""
@@ -138,7 +137,7 @@ def main() -> None:
         "--ranker",
         default=None,
         choices=["logreg", "manual"],
-        help="ранкер: logreg|manual (T-006); без флага — logreg, если addrmatch/ranker_model.json существует, иначе manual",
+        help="ранкер: logreg|manual; без флага — manual (логрег только явно, см. readme)",
     )
     args = parser.parse_args()
     # END_BLOCK_ARGS
@@ -149,19 +148,10 @@ def main() -> None:
     if args.channel:
         rows = [r for r in rows if r.get("channel") == args.channel]
     etalon = load_jsonl(args.etalon)
-    ranker_choice = args.ranker
-    if ranker_choice is None:
-        # Без явного --ranker: logreg только если модель есть И прошла гейты обучения (T-006 п.7 -
-        # при срыве тайм-бокса конфиг остаётся manual, даже если файл модели сохранён на диске).
-        ranker_choice = "manual"
-        model_path = Path(__file__).resolve().parent / "addrmatch" / "ranker_model.json"
-        if model_path.exists():
-            try:
-                with open(model_path, "r", encoding="utf-8") as mf:
-                    if json.load(mf).get("meets_gates", False):
-                        ranker_choice = "logreg"
-            except Exception:  # noqa: BLE001 - битый файл модели не должен ронять выбор ранкера по умолчанию
-                ranker_choice = "manual"
+    # Без явного --ranker — всегда manual: на всех 500 labeled логрег хуже ручных весов
+    # (top1 0.9525 vs 0.9725), поэтому выбор по умолчанию не зависит от файла модели и её флагов.
+    # Логрег — только явным --ranker logreg (см. readme §4/§7).
+    ranker_choice = args.ranker or "manual"
     matcher = Matcher(etalon, ranker=ranker_choice, ablate=args.ablate, N=args.N)
     # END_BLOCK_LOAD
 
