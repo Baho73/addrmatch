@@ -13,6 +13,8 @@
 #
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-001: каркас run.py — метрики ТЗ, --predictions, замер времени вокруг match()
+#   C-ADDRMATCH-PHASE-A T-004: --N (стоимость ложного answer, N4) пробрасывается в Matcher;
+#   --channel voice|webchat фильтрует строки до подсчёта метрик (H2 — абляция на voice-подмножестве).
 # END_CHANGE_SUMMARY
 
 """run.py — точка входа ТЗ (см. test_task_adress_match/README.md «Критерии приёмки»)."""
@@ -113,7 +115,9 @@ def compute_metrics(rows: list[dict], preds: list[dict], latencies_ms: list[floa
 
 # START_CONTRACT: main
 #   PURPOSE: CLI ТЗ: прогнать Matcher по --adresses, напечатать метрики JSON, опционально выгрузить --predictions.
-#   INPUTS: { --adresses: путь к labeled JSONL, --etalon: путь к эталону JSONL, --predictions: опц. путь для выгрузки, --ablate: опц. имя абляции (пробрасывается в Matcher) }
+#   INPUTS: { --adresses: путь к labeled JSONL, --etalon: путь к эталону JSONL, --predictions: опц. путь для выгрузки,
+#             --ablate: опц. имя абляции (пробрасывается в Matcher), --N: стоимость ложного answer (N4, default 10),
+#             --channel: опц. voice|webchat — считать метрики только по этому каналу (H2) }
 #   OUTPUTS: none (печатает ровно один JSON-объект с 9 ключами в stdout)
 #   SIDE_EFFECTS: чтение JSONL с диска; запись --predictions на диск; лог-маркер в stderr
 # END_CONTRACT: main
@@ -124,14 +128,18 @@ def main() -> None:
     parser.add_argument("--etalon", required=True, help="JSONL с эталонным справочником")
     parser.add_argument("--predictions", default=None, help="куда выгрузить predictions JSONL")
     parser.add_argument("--ablate", default=None, help="имя абляции (пробрасывается в Matcher)")
+    parser.add_argument("--N", type=float, default=10, help="стоимость ложного answer в переспросах (N4)")
+    parser.add_argument("--channel", default=None, choices=["voice", "webchat"], help="считать метрики только по одному каналу (H2)")
     args = parser.parse_args()
     # END_BLOCK_ARGS
 
     # START_BLOCK_LOAD
     # Загрузка данных и построение Matcher — вне замера латентности (N1: без загрузки/прогрева).
     rows = load_jsonl(args.adresses)
+    if args.channel:
+        rows = [r for r in rows if r.get("channel") == args.channel]
     etalon = load_jsonl(args.etalon)
-    matcher = Matcher(etalon, ablate=args.ablate)
+    matcher = Matcher(etalon, ablate=args.ablate, N=args.N)
     # END_BLOCK_LOAD
 
     # START_BLOCK_RUN
@@ -140,8 +148,9 @@ def main() -> None:
     for row in rows:
         raw = row.get("raw_adress", "")
         channel = row.get("channel", "voice")
+        slots = {"city": row.get("city", "")}
         t0 = time.perf_counter()
-        result = matcher.match(raw, channel=channel)
+        result = matcher.match(raw, channel=channel, slots=slots)
         t1 = time.perf_counter()
         latencies_ms.append((t1 - t0) * 1000.0)
         preds.append({"id": row["id"], "candidates": result.candidates, "scores": result.scores})
