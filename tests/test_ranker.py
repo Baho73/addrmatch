@@ -10,17 +10,30 @@
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-006: test_ranker.py — 6 тестов (интерфейс, save/load, калибратор
 #   монотонен, fit на 50 строках, reliability_report, Matcher fallback manual без файла модели).
+#   C-ADDRMATCH-PHASE-A T-006b: + 3 теста — fit(feature_names=...) обучает модель на явном
+#   подмножестве фичей (+ синтетическая "street_sim"), load() отвергает неизвестное имя фичи в
+#   модели, _feature_value("street_sim", ...) == street_sim(...) (T-006b: LogregRanker больше не
+#   обязан использовать все FEATURE_NAMES — диагноз T-006, мультиколлинеарность lev/phon/ngram/token_set).
 # END_CHANGE_SUMMARY
 
-"""tests/test_ranker.py — docs/concept.md §5.4, plan.xml T-006."""
+"""tests/test_ranker.py — docs/concept.md §5.4, plan.xml T-006/T-006b."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pytest
+
 from addrmatch.matcher import Matcher
-from addrmatch.ranker import FEATURES, LogregRanker, ManualRanker, _apply_calibrator
+from addrmatch.ranker import (
+    FEATURES,
+    LogregRanker,
+    ManualRanker,
+    _apply_calibrator,
+    _feature_value,
+    street_sim,
+)
 
 _ETALON_PATH = Path(__file__).resolve().parent.parent / "test_task_adress_match" / "data" / "etalon.jsonl"
 _LABELED_PATH = Path(__file__).resolve().parent.parent / "test_task_adress_match" / "data" / "adresses_labeled.jsonl"
@@ -95,7 +108,7 @@ def test_fit_on_small_sample_does_not_crash():
 
     ranker = LogregRanker.fit(rows, etalon, seed=42)
 
-    assert len(ranker.coef) == len(FEATURES)
+    assert len(ranker.coef) == len(ranker.feature_names)
     assert ranker.train_rows is not None and ranker.val_rows is not None
     assert len(ranker.train_rows) + len(ranker.val_rows) == 50
     feats = _sample_feats()
@@ -129,3 +142,56 @@ def test_matcher_falls_back_to_manual_when_model_missing(tmp_path, monkeypatch):
     assert result.error is None
     assert result.explain.get("ranker_fallback_warning")
     assert "manual" in result.explain["ranker_fallback_warning"]
+
+
+def test_fit_respects_custom_feature_names_and_hyperparams():
+    """T-006b: fit(feature_names=...) обучает модель ровно на переданном подмножестве (+ synthetic
+    "street_sim"), а не на всех FEATURE_NAMES; C/class_weight/neg_per_query пробрасываются в sklearn."""
+    rows = _load_jsonl(_LABELED_PATH)[:50]
+    etalon = _load_jsonl(_ETALON_PATH)
+    names = ["street_sim", "phon", "city_match"]
+
+    ranker = LogregRanker.fit(
+        rows, etalon, seed=42, C=0.5, class_weight="none", neg_per_query=5, feature_names=names
+    )
+
+    assert ranker.feature_names == names
+    assert len(ranker.coef) == 3
+    feats = _sample_feats()
+    p = ranker.score(feats)
+    assert 0.0 <= p <= 1.0
+    # contributions ключи — ровно переданные имена (+ bias), не полный FEATURE_NAMES.
+    contributions = ranker.explain(feats)["contributions"]
+    assert set(contributions) == {"bias", *names}
+
+
+def test_load_rejects_unknown_feature_name(tmp_path):
+    """T-006b: load() проверяет каждое имя в feature_names модели против FEATURE_NAMES/street_sim —
+    защита от рассинхрона модели с текущим кодом (было: точное совпадение с полным FEATURE_NAMES)."""
+    bad_path = tmp_path / "bad_model.json"
+    payload = {
+        "version": 1,
+        "feature_names": ["street_sim", "not_a_real_feature"],
+        "coef": [0.1, 0.2],
+        "intercept": -1.0,
+        "freq_median": 0.0,
+        "global_calibrator": {"type": "identity", "n": 0},
+        "strata_calibrators": {},
+        "seed": 42,
+        "meets_gates": False,
+    }
+    with open(bad_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+    with pytest.raises(ValueError):
+        LogregRanker.load(str(bad_path))
+
+
+def test_feature_value_street_sim_is_synthetic():
+    """T-006b: _feature_value("street_sim", feats) считает агрегат по street_sim(), не feats["street_sim"]
+    (такого ключа в feats вообще нет — matcher.py его не производит)."""
+    feats = _sample_feats()
+    assert "street_sim" not in feats
+    assert _feature_value("street_sim", feats) == street_sim(feats)
+    assert _feature_value("city_match", feats) == feats["city_match"]
+    assert _feature_value("no_such_key", {}) == 0.0

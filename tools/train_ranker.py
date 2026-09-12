@@ -24,6 +24,10 @@
 #   сходятся; H5 не сходится (негативы тип-2 -> reject/ask_street 0.40 вместо >= 0.85) — logreg хуже
 #   ManualRanker по top1/top3/reject_precision/reject_recall на полном run.py (docs/readme "что дальше").
 #   meets_gates=False -> run.py по умолчанию остаётся на manual (T-006 п.7 плана).
+#   C-ADDRMATCH-PHASE-A T-006b: + флаги --C, --class-weight none|balanced, --neg-per-query K
+#   (пробрасываются в LogregRanker.fit, T-006 диагноз — class_weight=balanced при дисбалансе 1:14.6
+#   и коррелированных lev/phon/ngram/token_set); summary теперь несёт C/class_weight/neg_per_query/
+#   n_features прогона для сравнения вариантов.
 # END_CHANGE_SUMMARY
 
 """tools/train_ranker.py — обучение LogregRanker (docs/concept.md §5.4, plan.xml T-006)."""
@@ -147,13 +151,24 @@ def main() -> None:
     argp.add_argument("--seed", type=int, default=42)
     argp.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "addrmatch" / "ranker_model.json"))
     argp.add_argument("--N", type=float, default=10, help="стоимость ложного answer в переспросах (N4)")
+    argp.add_argument("--C", type=float, default=0.3, help="C sklearn LogisticRegression (T-006b, default — лучший из 3 прогонов T-006b)")
+    argp.add_argument(
+        "--class-weight", default="balanced", choices=["none", "balanced"],
+        help="class_weight LogisticRegression: none|balanced (T-006b, диагноз T-006 — balanced при 1:14.6 сдвигал границу)",
+    )
+    argp.add_argument(
+        "--neg-per-query", type=int, default=10,
+        help="отсечка кандидатов на строку в обучающей выборке — top-K по street_sim (T-006b)",
+    )
     args = argp.parse_args()
     # END_BLOCK_ARGS
 
     rows = load_jsonl(args.adresses)
     etalon = load_jsonl(args.etalon)
 
-    ranker = LogregRanker.fit(rows, etalon, seed=args.seed)
+    ranker = LogregRanker.fit(
+        rows, etalon, seed=args.seed, C=args.C, class_weight=args.class_weight, neg_per_query=args.neg_per_query
+    )
 
     report_text = ranker.reliability_report()
     print()
@@ -182,6 +197,10 @@ def main() -> None:
     print(f"[TrainRanker][main][SAVE] {args.out} (meets_gates={ranker.meets_gates})")
 
     summary = {
+        "C": args.C,
+        "class_weight": args.class_weight,
+        "neg_per_query": args.neg_per_query,
+        "n_features": len(ranker.feature_names),
         "n_train_rows": len(ranker.train_rows or []),
         "n_val_rows": len(ranker.val_rows or []),
         "top1_train": top1_train,

@@ -12,8 +12,12 @@
 # START_MODULE_MAP
 #   FEATURES - список (имя, значение-по-умолчанию) - контракт фичей Ranker (§5.4)
 #   street_sim - 0.35*lev + 0.35*phon + 0.2*ngram + 0.1*token_set (used by ManualRanker/LogregRanker/matcher/train_ranker)
+#   _feature_value - значение фичи по имени для LogregRanker: "street_sim" - синтетическая (вызов
+#                    street_sim()), остальные - прямой feats.get (T-006b: LogregRanker может учиться
+#                    на подмножестве FEATURES, не только на полном наборе)
 #   ManualRanker - score(feats)->p, explain(feats)->разложение, ручные веса + сигмоида
-#   LogregRanker - score/explain (тот же интерфейс) + fit/save/load; калибровка по стратам + reliability_report
+#   LogregRanker - score/explain (тот же интерфейс) + fit/save/load; калибровка по стратам + reliability_report;
+#                  fit(C, class_weight, neg_per_query, feature_names) - гиперпараметры T-006b
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -28,6 +32,17 @@
 #   meets_gates: bool, выставляет tools/train_ranker.py по факту H3/H3a/H5, сохраняется в JSON —
 #   run.py включает logreg по умолчанию только если гейты пройдены (иначе manual, см. п.7 плана:
 #   в этом прогоне (seed=42) H5 не сошёлся — logreg хуже manual по всем метрикам run.py, см. readme).
+#   C-ADDRMATCH-PHASE-A T-006b: диагноз T-006 — class_weight=balanced при перекосе 1:14.6
+#   (296 позитивов/4327 негативов) двигал границу к похожим-но-неверным кандидатам; коррелированные
+#   lev/phon/ngram/token_set давали нестабильные веса (ngram +6.47). Правки: (1) _build_training_examples
+#   — единая отсечка top-K по street_sim на строку (neg_per_query, было top-10 ∪ street_sim>=0.5 для
+#   позитивных строк и ВСЕ кандидаты для негативных — вносило лишние «лёгкие» негативы и раздувало
+#   дисбаланс); (2) LogregRanker.fit(C, class_weight, feature_names) — гиперпараметры и состав фичей
+#   настраиваемы (feature_names — подмножество FEATURE_NAMES + синтетическая "street_sim", см.
+#   _feature_value); coef/feature_names модели теперь пара переменной длины (не обязательно все
+#   FEATURES) — save/load хранят и проверяют feature_names модели, а не жёстко глобальный FEATURE_NAMES.
+#   Итог трёх прогонов (см. train_ranker.py --C/--class-weight/--neg-per-query) — таблица в отчёте
+#   воркера; финальный выбор see meets_gates в ranker_model.json.
 # END_CHANGE_SUMMARY
 
 """ranker.py — Ranker.score(features) -> p (docs/concept.md §5.4)."""
@@ -69,6 +84,29 @@ FEATURES: list[tuple[str, float]] = [
 FEATURE_NAMES: list[str] = [name for name, _ in FEATURES]
 FEATURE_DEFAULTS: dict[str, float] = dict(FEATURES)
 
+# T-006b: набор фичей для LogregRanker.fit(feature_names=...) без lev/token_set по отдельности —
+# заменены агрегатной "street_sim" (синтетическая, см. _feature_value), phon/ngram оставлены как
+# самостоятельные сигналы. Диагноз T-006: lev/phon/ngram/token_set сильно коррелируют (все меряют
+# похожесть строки улицы) - LogisticRegression на 4 коррелированных входах даёт нестабильные веса
+# (ngram уходил в +6.47 - VIF-эффект), не разрешая противоречивость по отдельности не может отличить.
+FEATURE_NAMES_REDUCED_STREET: list[str] = [
+    "street_sim",
+    "phon",
+    "ngram",
+    "alias_hit",
+    "type_match",
+    "city_match",
+    "house_found",
+    "house_in_list",
+    "channel_voice",
+    "name_freq",
+    "n_close",
+    "freq_x_city",
+    "freq_x_phon",
+    "voice_x_lev",
+    "sim_x_house",
+]
+
 # Стартовые ручные веса (§5.4): street_sim = 0.35*lev + 0.35*phon + 0.2*ngram + 0.1*token_set;
 # z = 6*street_sim + 2.5*house_in_list + 1.5*city_match + 0.7*type_match - 0.8*(1-house_found) - 4.
 # T-004 A4-докрутка: изначальная формула max(phon,lev) давала H2 (абляция no_phonetic) с обратным
@@ -101,6 +139,16 @@ def street_sim(feats: dict[str, float]) -> float:
         + _STREET_SIM_W["ngram"] * feats.get("ngram", 0.0)
         + _STREET_SIM_W["token_set"] * feats.get("token_set", 0.0)
     )
+
+
+def _feature_value(name: str, feats: dict[str, float]) -> float:
+    """Значение фичи по имени для LogregRanker (T-006b): "street_sim" - синтетическая агрегатная
+    (street_sim(feats), не ключ feats), остальные - прямой feats.get с дефолтом из FEATURE_DEFAULTS.
+    Позволяет LogregRanker.fit(feature_names=...) обучаться на подмножестве FEATURES + street_sim,
+    не расширяя контракт feats, который производит matcher.py."""
+    if name == "street_sim":
+        return street_sim(feats)
+    return feats.get(name, FEATURE_DEFAULTS.get(name, 0.0))
 
 
 class ManualRanker:
@@ -218,12 +266,16 @@ def _stratum_key(feats: dict[str, float], freq_median: float) -> str:
     return f"{channel}|{freq_class}|{city_status}"
 
 
-def _build_training_examples(matcher: Any, rows: list[dict]) -> list[dict[str, Any]]:
+def _build_training_examples(matcher: Any, rows: list[dict], neg_per_query: int = 10) -> list[dict[str, Any]]:
     """Прогнать конвейер (Matcher.candidate_features) по labeled-строкам -> обучающие примеры.
 
-    Позитив: кандидат, чей houses содержит etalon_id строки (y=1) + кандидаты выше отсечки
-    (street_sim >= 0.5 или top-10 по street_sim) как y=0. Негатив labeled (etalon_id=None): все
-    кандидаты как y=0 (docs/concept.md §5.4, plan.xml T-006).
+    Отсечка на строку: top-`neg_per_query` кандидатов по сырому street_sim (T-006b — было
+    top-10 ∪ {street_sim>=0.5} для позитивных строк и ВСЕ кандидаты для негативных; объединение с
+    порогом 0.5 и безлимитные негативы раздували число "лёгких" (уже далёких по рангу) негативов и
+    усиливали дисбаланс 1:14.6, который class_weight=balanced сдвигал в пользу похожих-но-неверных
+    кандидатов, см. docs/errors-a4.md). Позитив: кандидат, чей houses содержит etalon_id строки
+    (y=1), остальные из top-K - y=0. Негатив labeled (etalon_id=None): top-K кандидатов как y=0
+    (docs/concept.md §5.4, plan.xml T-006/T-006b).
     """
     # START_BLOCK_BUILD
     examples: list[dict[str, Any]] = []
@@ -237,8 +289,12 @@ def _build_training_examples(matcher: Any, rows: list[dict]) -> list[dict[str, A
         if not pairs:
             continue
 
+        sims = sorted(range(len(pairs)), key=lambda i: -street_sim(pairs[i][1]))
+        keep = set(sims[:neg_per_query])
+
         if etalon_id is None:
-            for _, feats in pairs:
+            for i in keep:
+                _, feats = pairs[i]
                 examples.append({"feats": feats, "y": 0, "id": row.get("id")})
             continue
 
@@ -248,8 +304,6 @@ def _build_training_examples(matcher: Any, rows: list[dict]) -> list[dict[str, A
             # (тайм-боксовый ranker не может научиться доставать несуществующего кандидата).
             continue
 
-        sims = sorted(range(len(pairs)), key=lambda i: -street_sim(pairs[i][1]))
-        keep = {i for i in sims[:10]} | {i for i in range(len(pairs)) if street_sim(pairs[i][1]) >= 0.5}
         keep.add(pos_idx)
         for i in keep:
             _, feats = pairs[i]
@@ -261,9 +315,10 @@ def _build_training_examples(matcher: Any, rows: list[dict]) -> list[dict[str, A
 class LogregRanker:
     # START_CONTRACT: __init__
     #   PURPOSE: Собрать LogregRanker из уже обученных параметров (используется fit() и load()).
-    #   INPUTS: { coef: list[float] - веса по FEATURE_NAMES, intercept: float, freq_median: float -
+    #   INPUTS: { coef: list[float] - веса по feature_names, intercept: float, freq_median: float -
     #             порог freq_class для страт калибровки, global_calibrator: dict|None, strata_calibrators:
-    #             dict[str, dict]|None, seed: int }
+    #             dict[str, dict]|None, seed: int, feature_names: list[str]|None - подмножество
+    #             FEATURE_NAMES (+ синтетическая "street_sim", T-006b); по умолчанию — все FEATURE_NAMES }
     #   OUTPUTS: none
     #   SIDE_EFFECTS: none
     # END_CONTRACT: __init__
@@ -275,9 +330,13 @@ class LogregRanker:
         global_calibrator: dict[str, Any] | None = None,
         strata_calibrators: dict[str, dict[str, Any]] | None = None,
         seed: int = 42,
+        feature_names: list[str] | None = None,
     ) -> None:
-        if len(coef) != len(FEATURE_NAMES):
-            raise ValueError(f"LogregRanker: coef длиной {len(coef)}, ожидалось {len(FEATURE_NAMES)} (FEATURES)")
+        self.feature_names: list[str] = list(feature_names) if feature_names is not None else list(FEATURE_NAMES)
+        if len(coef) != len(self.feature_names):
+            raise ValueError(
+                f"LogregRanker: coef длиной {len(coef)}, ожидалось {len(self.feature_names)} (feature_names)"
+            )
         self.coef = list(coef)
         self.intercept = float(intercept)
         self.freq_median = float(freq_median)
@@ -298,8 +357,8 @@ class LogregRanker:
 
     def _logit(self, feats: dict[str, float]) -> float:
         z = self.intercept
-        for (name, default), w in zip(FEATURES, self.coef):
-            z += w * feats.get(name, default)
+        for name, w in zip(self.feature_names, self.coef):
+            z += w * _feature_value(name, feats)
         return z
 
     def _calibrator_for(self, feats: dict[str, float]) -> dict[str, Any]:
@@ -332,7 +391,7 @@ class LogregRanker:
         key = _stratum_key(feats, self.freq_median)
         calib = self.strata_calibrators.get(key, self.global_calibrator)
         p = _apply_calibrator(calib, z, p_raw)
-        contributions = {name: w * feats.get(name, default) for (name, default), w in zip(FEATURES, self.coef)}
+        contributions = {name: w * _feature_value(name, feats) for name, w in zip(self.feature_names, self.coef)}
         contributions["bias"] = self.intercept
         return {
             "marker": "[Ranker][score][LOGREG]",
@@ -347,22 +406,40 @@ class LogregRanker:
         # END_BLOCK_EXPLAIN
 
     # START_CONTRACT: fit
-    #   PURPOSE: Обучить LogregRanker на labeled-строках (§5.4, T-006): сплит 75/25 стратифицированный
-    #            по (channel, is_negative), LogisticRegression(C=1.0, class_weight=balanced) на train,
-    #            калибровка по стратам на val.
+    #   PURPOSE: Обучить LogregRanker на labeled-строках (§5.4, T-006/T-006b): сплит 75/25
+    #            стратифицированный по (channel, is_negative), LogisticRegression(C, class_weight) на
+    #            train, калибровка по стратам на val.
     #   INPUTS: { rows: list[dict] - adresses_labeled (id/channel/city/raw_adress/etalon_id), etalon:
-    #             list[dict] - эталонный справочник, seed: int }
+    #             list[dict] - эталонный справочник, seed: int, C: float - обратная сила регуляризации
+    #             sklearn LogisticRegression (T-006b, default 0.3 - лучший из 3 прогонов T-006b),
+    #             class_weight: "balanced"|None - T-006b (default "balanced"), neg_per_query: int -
+    #             отсечка кандидатов на строку в _build_training_examples (T-006b, default 10),
+    #             feature_names: list[str]|None - подмножество FEATURE_NAMES (+"street_sim") для модели;
+    #             по умолчанию FEATURE_NAMES_REDUCED_STREET (T-006b — street_sim агрегирует
+    #             lev/token_set вместо их раздельного использования, снимает мультиколлинеарность) }
     #   OUTPUTS: { LogregRanker - обучен и откалиброван; .train_rows/.val_rows/._train_examples/
     #              ._val_examples заполнены для tools/train_ranker.py }
     #   SIDE_EFFECTS: none (Matcher строится только in-memory для извлечения фичей)
     # END_CONTRACT: fit
     @classmethod
-    def fit(cls, rows: list[dict], etalon: list[dict], seed: int = 42) -> "LogregRanker":
+    def fit(
+        cls,
+        rows: list[dict],
+        etalon: list[dict],
+        seed: int = 42,
+        C: float = 0.3,
+        class_weight: str | None = "balanced",
+        neg_per_query: int = 10,
+        feature_names: list[str] | None = None,
+    ) -> "LogregRanker":
         # START_BLOCK_FIT
         # Отложенный импорт: matcher.py импортирует ranker.py на уровне модуля (ManualRanker/
         # LogregRanker) - импорт Matcher здесь на уровне модуля дал бы цикл импортов. К моменту
         # вызова fit() (из tools/train_ranker.py) addrmatch.matcher уже полностью загружен.
         from addrmatch.matcher import Matcher
+
+        names = list(feature_names) if feature_names is not None else list(FEATURE_NAMES_REDUCED_STREET)
+        cw = None if class_weight in (None, "none") else class_weight
 
         stratify_keys = [
             f"{row.get('channel', 'voice')}|{'neg' if row.get('etalon_id') is None else 'pos'}" for row in rows
@@ -374,13 +451,13 @@ class LogregRanker:
         # candidate_features не зависит от ranker - ManualRanker тут используется только затем,
         # что Matcher его требует в конструкторе; на обучающую выборку он не влияет.
         matcher = Matcher(etalon)
-        train_examples = _build_training_examples(matcher, train_rows)
-        val_examples = _build_training_examples(matcher, val_rows)
+        train_examples = _build_training_examples(matcher, train_rows, neg_per_query=neg_per_query)
+        val_examples = _build_training_examples(matcher, val_rows, neg_per_query=neg_per_query)
 
-        X_train = np.array([[ex["feats"].get(n, d) for n, d in FEATURES] for ex in train_examples])
+        X_train = np.array([[_feature_value(n, ex["feats"]) for n in names] for ex in train_examples])
         y_train = np.array([ex["y"] for ex in train_examples])
 
-        clf = LogisticRegression(C=1.0, class_weight="balanced", max_iter=1000, random_state=seed)
+        clf = LogisticRegression(C=C, class_weight=cw, max_iter=1000, random_state=seed)
         clf.fit(X_train, y_train)
 
         freq_values = [ex["feats"].get("name_freq", 0.0) for ex in train_examples]
@@ -391,6 +468,7 @@ class LogregRanker:
             intercept=float(clf.intercept_[0]),
             freq_median=freq_median,
             seed=seed,
+            feature_names=names,
         )
         ranker._fit_calibration(val_examples)
         ranker.train_rows = train_rows
@@ -479,7 +557,7 @@ class LogregRanker:
         # START_BLOCK_SAVE
         payload = {
             "version": 1,
-            "feature_names": FEATURE_NAMES,
+            "feature_names": self.feature_names,
             "coef": self.coef,
             "intercept": self.intercept,
             "freq_median": self.freq_median,
@@ -503,8 +581,13 @@ class LogregRanker:
         # START_BLOCK_LOAD
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
-        if payload.get("feature_names") != FEATURE_NAMES:
-            raise ValueError("LogregRanker.load: feature_names модели не совпадает с текущим FEATURES")
+        feature_names = payload.get("feature_names") or FEATURE_NAMES
+        # T-006b: модель может быть обучена на подмножестве FEATURE_NAMES (+ синтетическая
+        # "street_sim") - проверяем, что каждое имя известно текущему коду, а не точное совпадение
+        # с полным FEATURE_NAMES (было в T-006, когда LogregRanker всегда использовал все FEATURES).
+        valid_names = set(FEATURE_NAMES) | {"street_sim"}
+        if not all(name in valid_names for name in feature_names):
+            raise ValueError("LogregRanker.load: в модели есть неизвестное имя фичи (не FEATURE_NAMES/street_sim)")
         ranker = cls(
             coef=payload["coef"],
             intercept=payload["intercept"],
@@ -512,6 +595,7 @@ class LogregRanker:
             global_calibrator=payload.get("global_calibrator"),
             strata_calibrators=payload.get("strata_calibrators"),
             seed=payload.get("seed", 42),
+            feature_names=feature_names,
         )
         ranker.meets_gates = bool(payload.get("meets_gates", False))
         return ranker
