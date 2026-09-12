@@ -2,19 +2,29 @@
 #   PURPOSE: Публичная точка сопоставления адреса со справочником; MatchResult + Matcher.
 #   SCOPE: Контракт F2/F5 (docs/concept.md §3, §5). A3 — рабочий конвейер: Normalizer -> Parser ->
 #          Index -> Ranker -> Decider. Поддерживает --ablate whole_string|no_phonetic (H1a, H2).
+#          T-006: candidate_features() выносит шаг "конвейер -> фичи кандидатов" наружу (без
+#          ранжирования/решения) для обучения LogregRanker (tools/train_ranker.py), не дублируя код
+#          match(); ranker="logreg"|"manual"|объект переключает Ranker (fallback manual при
+#          отсутствии addrmatch/ranker_model.json).
 #   DEPENDS: M-NORMALIZER, M-PARSER, M-INDEX, M-RANKER, M-DECIDER
 #   LINKS: V-M-MATCHER
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
 #   MatchResult - структура ответа match() по контракту F2
-#   Matcher - ready()/match(): normalize->parse->candidates->resolve_objects->score->decide
+#   Matcher - ready()/match()/candidate_features(): normalize->parse->candidates->resolve_objects->
+#             ->features(->score->decide только в match())
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-001: каркас MatchResult/Matcher-заглушки (всегда reject, никогда не бросает)
 #   C-ADDRMATCH-PHASE-A T-004: рабочий match() — сборка фичей Ranker из Index.candidates/
 #   resolve_objects, n_close вторым проходом, Decider.decide(); ablate whole_string/no_phonetic.
+#   C-ADDRMATCH-PHASE-A T-006: конвейер до фичей вынесен в _candidate_features_full() (публичная
+#   обёртка candidate_features() — для tools/train_ranker.py, LogregRanker.fit()); добавлена фича
+#   sim_x_house; ranker: str("logreg"|"manual")|объект|None в конструкторе — "logreg" грузит
+#   addrmatch/ranker_model.json, при отсутствии/ошибке — fallback ManualRanker с предупреждением
+#   в MatchResult.explain["ranker_fallback_warning"].
 # END_CHANGE_SUMMARY
 
 """Матчер адресов: контракт F2 (docs/concept.md). A3 — рабочий конвейер §5."""
@@ -22,13 +32,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from addrmatch.decider import Decider
 from addrmatch.index import BruteForceIndex, norm_house
 from addrmatch.normalizer import normalize
 from addrmatch.parser import parse
-from addrmatch.ranker import ManualRanker
+from addrmatch.ranker import LogregRanker, ManualRanker, street_sim
+
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parent / "ranker_model.json"
 
 # семь исходов диалога (docs/concept.md F2)
 DECISIONS = ("answer", "answer_soft", "confirm", "ask_city", "ask_house", "ask_street", "reject")
@@ -58,24 +71,27 @@ class Matcher:
     # START_CONTRACT: __init__
     #   PURPOSE: Загрузить эталонный справочник и подготовить матчер к работе.
     #   INPUTS: { etalon: list[dict] - эталонные адреса (etalon_id/city/street_type/street/house/...),
-    #             ranker: ManualRanker|None - подмена ранкера (T-006 LogregRanker), N: float -
-    #             стоимость ложного answer в переспросах (N4), ablate: str|None - "whole_string"|
-    #             "no_phonetic"|None (H1a, H2) }
+    #             ranker: str("logreg"|"manual")|объект(score/explain)|None - выбор ранкера (T-006);
+    #             None/"manual" -> ManualRanker; "logreg" -> LogregRanker.load(addrmatch/ranker_model.json),
+    #             fallback ManualRanker + предупреждение при отсутствии/битом файле; объект - подмена
+    #             напрямую (тесты/эксперименты). N: float - стоимость ложного answer в переспросах (N4),
+    #             ablate: str|None - "whole_string"|"no_phonetic"|None (H1a, H2) }
     #   OUTPUTS: none
-    #   SIDE_EFFECTS: none
+    #   SIDE_EFFECTS: none (fallback-ветка "logreg" читает addrmatch/ranker_model.json с диска)
     # END_CONTRACT: __init__
     def __init__(
         self,
         etalon: list[dict],
-        ranker: ManualRanker | None = None,
+        ranker: Any = None,
         N: float = 10,
         ablate: str | None = None,
     ) -> None:
         # START_BLOCK_INIT
         self._ablate = ablate
+        self._ranker_fallback_warning: str | None = None
         try:
             self._index = BruteForceIndex(etalon)
-            self._ranker = ranker or ManualRanker()
+            self._ranker = self._resolve_ranker(ranker)
             self._decider = Decider(N=N)
             self._ready = self._index.ready()
             self._load_error: str | None = None
@@ -86,6 +102,26 @@ class Matcher:
             self._ready = False
             self._load_error = str(exc)
         # END_BLOCK_INIT
+
+    # START_BLOCK_RANKER_SELECT
+    def _resolve_ranker(self, ranker: Any) -> Any:
+        """None/"manual" -> ManualRanker; "logreg" -> LogregRanker.load с fallback на ManualRanker
+        (файла нет/битый) + предупреждение в explain (T-006); объект (score/explain) - как есть."""
+        if ranker is None or ranker == "manual":
+            return ManualRanker()
+        if ranker == "logreg":
+            if not DEFAULT_MODEL_PATH.exists():
+                self._ranker_fallback_warning = f"logreg: {DEFAULT_MODEL_PATH} не найден, fallback manual"
+                return ManualRanker()
+            try:
+                return LogregRanker.load(str(DEFAULT_MODEL_PATH))
+            except Exception as exc:  # noqa: BLE001 - битая модель не должна ронять Matcher
+                self._ranker_fallback_warning = f"logreg: ошибка загрузки модели ({exc}), fallback manual"
+                return ManualRanker()
+        if isinstance(ranker, str):
+            raise ValueError(f"Matcher: неизвестный ranker={ranker!r} (ожидается logreg|manual|объект)")
+        return ranker
+    # END_BLOCK_RANKER_SELECT
 
     def ready(self) -> bool:
         """Готовность матчера; False только при ошибке загрузки (F5)."""
@@ -117,8 +153,28 @@ class Matcher:
             return MatchResult(decision="reject", explain={"marker": "[Matcher][match][ERROR]"}, error=str(exc))
         # END_BLOCK_GUARD
 
+    # START_CONTRACT: candidate_features
+    #   PURPOSE: Прогнать конвейер (Normalizer->Parser->Index) до фичей кандидатов-объектов, без
+    #            ранжирования/решения (T-006: обучающая выборка LogregRanker.fit(), без дублирования
+    #            кода match()).
+    #   INPUTS: { raw: str, channel: str, slots: dict|None, scope: list[str]|None }
+    #   OUTPUTS: { list[tuple[ObjCand, dict[str, float]]] - кандидаты-объекты + их фичи (FEATURES, §5.4) }
+    #   SIDE_EFFECTS: none
+    # END_CONTRACT: candidate_features
+    def candidate_features(
+        self, raw: str, channel: str = "voice", slots: dict | None = None, scope: Any = None
+    ) -> list[tuple[Any, dict[str, float]]]:
+        # START_BLOCK_CANDIDATE_FEATURES
+        pairs, _parse_result, _city_res, _house_norm = self._candidate_features_full(raw, channel, slots or {}, scope)
+        return pairs
+        # END_BLOCK_CANDIDATE_FEATURES
+
     # START_BLOCK_PIPELINE
-    def _match_impl(self, raw: str, channel: str, slots: dict, asked_slot: str | None, scope: Any) -> MatchResult:
+    def _candidate_features_full(
+        self, raw: str, channel: str, slots: dict, scope: Any
+    ) -> tuple[list[tuple[Any, dict[str, float]]], Any, Any, str | None]:
+        """Конвейер до фичей кандидатов (общий шаг match() и candidate_features(), T-006): parse ->
+        city -> street_q -> Index.candidates/resolve_objects -> фичи (+ n_close вторым проходом)."""
         norm = normalize(raw or "", channel=channel)
         parse_result = parse(norm, self._index.street_types, has_name=self._index.has_name)
 
@@ -155,7 +211,7 @@ class Matcher:
         if house_slot_text:
             house_norm = norm_house(house_slot_text)
 
-        ranked: list[dict] = []
+        pairs: list[tuple[Any, dict[str, float]]] = []
         for oc in obj_cands:
             nc = name_cand_by_id[oc.name_id]
             feats = {
@@ -174,17 +230,23 @@ class Matcher:
             feats["freq_x_city"] = feats["name_freq"] * feats["city_match"]
             feats["freq_x_phon"] = feats["name_freq"] * feats["phon"]
             feats["voice_x_lev"] = feats["channel_voice"] * feats["lev"]
-            ranked.append({"obj": oc, "feats": feats})
+            feats["sim_x_house"] = street_sim(feats) * feats["house_in_list"]  # T-006
+            pairs.append((oc, feats))
 
         # n_close: второй проход — число кандидатов в пределах 0.05 от лучшего сырого скора улицы.
-        raw_scores = [max(r["feats"]["lev"], r["feats"]["phon"], r["feats"]["ngram"]) for r in ranked]
+        raw_scores = [max(f["lev"], f["phon"], f["ngram"]) for _, f in pairs]
         best_raw = max(raw_scores) if raw_scores else 0.0
         n_close = float(sum(1 for s in raw_scores if best_raw - s <= 0.05))
-        for r in ranked:
-            r["feats"]["n_close"] = n_close
-            r["p"] = self._ranker.score(r["feats"])
+        for _, f in pairs:
+            f["n_close"] = n_close
         # END_BLOCK_FEATURES
 
+        return pairs, parse_result, city_res, (None if whole_string else house_norm)
+
+    def _match_impl(self, raw: str, channel: str, slots: dict, asked_slot: str | None, scope: Any) -> MatchResult:
+        pairs, parse_result, city_res, house_norm = self._candidate_features_full(raw, channel, slots, scope)
+
+        ranked = [{"obj": oc, "feats": feats, "p": self._ranker.score(feats)} for oc, feats in pairs]
         ranked.sort(key=lambda r: -r["p"])
         decider_input = [
             {
@@ -205,10 +267,12 @@ class Matcher:
             city_res=city_res,
             parse=parse_result,
             asked_slot=asked_slot,
-            house_norm=None if whole_string else house_norm,
+            house_norm=house_norm,
         )
 
         explain = self._ranker.explain(ranked[0]["feats"]) if ranked else {"marker": "[Matcher][match][NO_CANDIDATES]"}
+        if self._ranker_fallback_warning:
+            explain = {**explain, "ranker_fallback_warning": self._ranker_fallback_warning}
         return MatchResult(
             decision=result.decision,
             candidates=result.candidates,
