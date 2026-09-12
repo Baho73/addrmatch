@@ -103,10 +103,9 @@ def test_normalizer_version_is_stable_hex12():
     assert _build_version() == NORMALIZER_VERSION
 
 
-# START_CHANGE_SUMMARY (доп.)
+# Дополнение (T-003b):
 #   C-ADDRMATCH-PHASE-A T-003b: тесты на доводку house_found_rate - "а" после "дробь" не
 #   теряется стоп-словом; "д"+число слитно без пробела разрезается и маркер отбрасывается.
-# END_CHANGE_SUMMARY
 
 
 def test_letter_a_survives_after_drob_trigger():

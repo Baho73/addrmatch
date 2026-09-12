@@ -6,6 +6,20 @@
 #   LINKS: V-M-INDEX
 # END_MODULE_CONTRACT
 #
+# START_MODULE_MAP
+#   test_build_ready_and_sized - тест
+#   test_has_name_true_for_known_street_token - тест
+#   test_has_name_false_for_short_or_unknown_token - тест
+#   test_resolve_city_exact - тест
+#   test_resolve_city_fuzzy_typo - тест
+#   test_resolve_city_empty_is_none - тест
+#   test_resolve_city_unknown_is_unresolved - тест
+#   test_candidates_phonetic_typo_in_top3 - тест
+#   test_candidates_empty_query_is_empty_list - тест
+#   test_phonetic_key_matches_for_known_pairs - тест
+#   test_candidates_latency_under_1ms_average - тест
+# END_MODULE_MAP
+#
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-004: test_index.py — build, has_name, resolve_city (москва/масква/
 #   пусто/Кемерово), candidates("киравсгой") top-3, равенство фонетических ключей, latency < 1мс.

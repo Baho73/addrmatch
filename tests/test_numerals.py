@@ -102,10 +102,9 @@ def test_letter_name_bare_no_trigger_not_merged_here():
     assert words_to_digits("восемнадцать а") == ("18 а", False)
 
 
-# START_CHANGE_SUMMARY (доп.)
+# Дополнение (T-003b):
 #   C-ADDRMATCH-PHASE-A T-003b: тесты на доводку house_found_rate (дробь-триггер, опечатки
 #   триггеров, голая многобуквенная буква-имя, слипание триггер+суффикс, идемпотентность).
-# END_CHANGE_SUMMARY
 
 
 def test_drob_trigger_with_digit():

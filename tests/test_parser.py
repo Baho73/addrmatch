@@ -6,6 +6,31 @@
 #   LINKS: V-M-PARSER
 # END_MODULE_CONTRACT
 #
+# START_MODULE_MAP
+#   test_house_plain - тест
+#   test_house_letter - тест
+#   test_house_korpus_num - тест
+#   test_house_slash_is_korpus - тест
+#   test_house_range_flag - тест
+#   test_house_apartment_dropped - тест
+#   test_type_street_house - тест
+#   test_no_type - тест
+#   test_city_hint_before_type - тест
+#   test_no_type_no_city_hint - тест
+#   test_glued_street_type - тест
+#   test_single_number_answer - тест
+#   test_single_word_answer - тест
+#   test_cues_true_by_type - тест
+#   test_cues_true_by_house_only - тест
+#   test_cues_false_without_hints - тест
+#   test_cues_true_via_has_name - тест
+#   test_cues_false_via_has_name_no_match - тест
+#   test_two_bare_numbers_not_merged - тест
+#   test_ambiguous_number_propagated_from_normresult - тест
+#   test_tokens_field - тест
+#   test_empty_string - тест
+# END_MODULE_MAP
+#
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-003: test_parser.py — формы дома (16/16а/16к2/16/2/16-18/16 кв 5),
 #   тип+улица+дом, без типа, city_hint, слипание типа, дозапрос числом/словом, cues, ambiguous.

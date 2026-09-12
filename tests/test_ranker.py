@@ -7,6 +7,18 @@
 #   LINKS: V-M-RANKER
 # END_MODULE_CONTRACT
 #
+# START_MODULE_MAP
+#   test_logreg_interface_matches_manual_ranker - тест
+#   test_save_load_roundtrip_same_p - тест
+#   test_calibrator_monotonic - тест
+#   test_fit_on_small_sample_does_not_crash - тест
+#   test_reliability_report_has_global_max_dev - тест
+#   test_matcher_falls_back_to_manual_when_model_missing - тест
+#   test_fit_respects_custom_feature_names_and_hyperparams - тест
+#   test_load_rejects_unknown_feature_name - тест
+#   test_feature_value_street_sim_is_synthetic - тест
+# END_MODULE_MAP
+#
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-006: test_ranker.py — 6 тестов (интерфейс, save/load, калибратор
 #   монотонен, fit на 50 строках, reliability_report, Matcher fallback manual без файла модели).

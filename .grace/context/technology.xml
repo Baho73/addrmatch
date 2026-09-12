@@ -6,5 +6,8 @@
   <Observability>Поле explain в ответе match() (разложение скора лидера по сигналам), логирование входа/выхода обученных компонентов, reliability_report ранкера; замер латентности монотонными часами внутри match()</Observability>
   <OperationalConstraints>
     <Constraint>Prefer existing project libraries and established repository patterns.</Constraint>
+    <Constraint>Зависимости инференса закреплены в requirements.txt: rapidfuzz >= 3.14, scikit-learn >= 1.5, numpy >= 1.26; тесты — pytest >= 9.0. Новые зависимости — только через изменение C-* с обоснованием.</Constraint>
+    <Constraint>Модель ранкера хранится как JSON (addrmatch/ranker_model.json: веса, калибраторы, feature_names, meets_gates) — без pickle; run.py выбирает logreg только при meets_gates=true, иначе ручные веса.</Constraint>
+    <Constraint>Индекс строится из справочника той же версией Normalizer (NORMALIZER_VERSION хранится в индексе); тяжёлые модели (LLM) — только офлайн при сборке словаря имён, не в match().</Constraint>
   </OperationalConstraints>
 </GraceTechnology>

@@ -2,7 +2,16 @@
   <VerificationDocuments>
     <VD-MAIN>
       <Path>verification/main.xml</Path>
-      <Owns></Owns>
+      <Owns>
+        <V-M-NUMERALS />
+        <V-M-NORMALIZER />
+        <V-M-PARSER />
+        <V-M-INDEX />
+        <V-M-RANKER />
+        <V-M-DECIDER />
+        <V-M-MATCHER />
+        <V-M-RUN />
+      </Owns>
     </VD-MAIN>
   </VerificationDocuments>
 </GraceVerificationIndex>

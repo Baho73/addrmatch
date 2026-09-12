@@ -144,7 +144,7 @@ def classify_positive(
 #   SIDE_EFFECTS: none
 # END_CONTRACT: classify_negative
 def classify_negative(candidates: list[str], norm_text: str, street_type: str | None) -> str:
-    # START_BLOCK_CLASSIFY
+    # START_BLOCK_CLASSIFY_NEG
     if not candidates:
         return "correctly_rejected"
     # Эвристика tools/check_parser.py: тип-1 "не про адрес" — ни цифры, ни тип улицы в строке.
@@ -152,7 +152,7 @@ def classify_negative(candidates: list[str], norm_text: str, street_type: str | 
     if not has_digit and street_type is None:
         return "accepted_negative_type1"
     return "accepted_negative_type2"
-    # END_BLOCK_CLASSIFY
+    # END_BLOCK_CLASSIFY_NEG
 
 
 # START_CONTRACT: build_report

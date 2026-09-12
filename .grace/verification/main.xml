@@ -1,3 +1,48 @@
 <GraceVerificationDocument graceVersion="4.0">
-  <VD-MAIN></VD-MAIN>
+  <VD-MAIN>
+    <V-M-NUMERALS>
+      <Command>python -m pytest -q tests/test_numerals.py</Command>
+      <Scenario>«сто шестьдесят три» → 163; «два к два» → 2к2; «сорок восемь короче бэ» → 48Б; «7 дробь 2» → 7к2; «5 бэ» → 5Б; «дватцать васемь» → 28; «три сто» → ambiguous, первое прочтение; строка без чисел не меняется.</Scenario>
+      <Marker>[Numerals][words_to_digits][BLOCK_PIPELINE]</Marker>
+    </V-M-NUMERALS>
+    <V-M-NORMALIZER>
+      <Command>python -m pytest -q tests/test_normalizer.py tests/test_imports.py</Command>
+      <Scenario>Сокращения ул./пр-т/д./к. раскрыты; ё→е; латиница-двойники только для webchat; стоп-слова удалены целыми токенами; «18 а» → 18а; «металлургов23» → «металлургов 23»; normalize(normalize(x)) == normalize(x) на 500 строках labeled; NORMALIZER_VERSION стабилен; модуль не импортирует index/parser/matcher/sklearn/rapidfuzz.</Scenario>
+      <Marker>[Normalizer][normalize][BLOCK_CLEANUP]</Marker>
+    </V-M-NORMALIZER>
+    <V-M-PARSER>
+      <Command>python -m pytest -q tests/test_parser.py</Command>
+      <Command>python tools/check_parser.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+      <Scenario>Формы дома 16 / 16а / 16к2 / 16/2 → 16к2 / 16-18 (диапазон) / 16 кв 5; тип+улица+дом; city_hint до типа; слипание «шоссемосковское»; ответ одним числом / словом; «3 1» → house 3 + ambiguous. На labeled: дом выделен ≥ 0.95 (факт 0.9625), негативы «не про адрес» без cues ≥ 0.90 (факт 1.0), ложных «не адрес» на позитивах ≤ 0.01 (факт 0.0025).</Scenario>
+      <Marker>[Parser][parse][BLOCK_HOUSE]</Marker>
+    </V-M-PARSER>
+    <V-M-INDEX>
+      <Command>python -m pytest -q tests/test_index.py</Command>
+      <Scenario>Построение на 1000 эталонах; has_name; resolve_city для «москва»/«масква»/«»/«Кемерово» → resolved/resolved/none/unresolved; candidates(«киравсгой») содержит «кировская» в top-3; фонетические ключи пар «киравсгой»↔«кировская», «дзержинскага»↔«дзержинского», «пирвомайсгий»↔«первомайский» совпадают; candidates() менее 1 мс в среднем на 200 вызовах.</Scenario>
+      <Marker>[Index][candidates][BLOCK_CANDIDATES]</Marker>
+    </V-M-INDEX>
+    <V-M-RANKER>
+      <Command>python -m pytest -q tests/test_ranker.py</Command>
+      <Command>python tools/train_ranker.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --seed 42</Command>
+      <Scenario>ManualRanker.score в [0,1], explain раскладывает вклад по фичам; LogregRanker save/load round-trip даёт те же p; калибратор монотонен; fit на 50 строках не падает; при отсутствии модели Matcher падает на manual. train_ranker: H3a (бины ≤ 0.1, train/val ≤ 5 п.п.) и H3 (ошибок answer ≤ 3 на val) выполнены; H5 (негативы тип-2 → reject ≥ 0.85) не выполнена → meets_gates=false, default manual.</Scenario>
+      <Marker>[Ranker][score][MANUAL]</Marker>
+    </V-M-RANKER>
+    <V-M-DECIDER>
+      <Command>python -m pytest -q tests/test_decider.py</Command>
+      <Scenario>Пороги из N (answer при p ≥ N/(N+1)); каждый из 7 исходов достижим; ask_city раньше confirm при одноимённой улице в двух городах и пустом городе; ask_house требует разрешённого города; ask_city требует street_sim ≥ 0.75 или p ≥ 0.6; проекция to_tz: ask_house → ≤ 3 дома одной улицы, reject/ask_street → [].</Scenario>
+      <Marker>[Decider][decide][RULE_n]</Marker>
+    </V-M-DECIDER>
+    <V-M-MATCHER>
+      <Command>python -m pytest -q tests/test_matcher.py tests/test_smoke.py</Command>
+      <Command>python tools/simulate_dialog.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</Command>
+      <Scenario>Семь исходов на реальных строках; слот-id города сужает объекты; слот-id улицы + asked_slot=house + raw «шестьдесят» → answer; слот-текст города побеждает city_hint; match() никогда не бросает (raw None/123, мусорные slots, битый эталон → reject + error). Симуляция диалога: forced_house_resolved ≥ 0.95 (факт 0.958, n=332), forced_city_resolved ≥ 0.95 (факт 0.957, n=70); естественные ask_house/ask_city — мало данных (n=11/4).</Scenario>
+      <Marker>[Matcher][match][BLOCK_PIPELINE]</Marker>
+    </V-M-MATCHER>
+    <V-M-RUN>
+      <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
+      <Command>python tools/check_preds.py preds.jsonl --expect 500</Command>
+      <Scenario>Один JSON в stdout с 9 ключами ТЗ; на labeled: top1 ≥ 0.85 (факт 0.9725), top3 ≥ 0.92 (0.98), reject_precision ≥ 0.80 (0.966), reject_recall ≥ 0.80 (0.86), p95 ≤ 10 мс (≈1.5 мс, i9-10920X); preds.jsonl 500 строк формата {id, candidates, scores}, пустой список = отказ. Абляции: --ablate whole_string → top1 0.645; --ablate no_phonetic → top1 0.97.</Scenario>
+      <Marker>[Run][main][METRICS]</Marker>
+    </V-M-RUN>
+  </VD-MAIN>
 </GraceVerificationDocument>

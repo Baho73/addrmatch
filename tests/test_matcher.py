@@ -9,6 +9,25 @@
 #   LINKS: V-M-MATCHER
 # END_MODULE_CONTRACT
 #
+# START_MODULE_MAP
+#   test_answer_real_kirovskaya - тест
+#   test_reject_no_address_cues_real - тест
+#   test_ask_city_real_mira - тест
+#   test_ask_house_real - тест
+#   test_confirm_real - тест
+#   test_answer_soft_real - тест
+#   test_ask_street_or_reject_real - тест
+#   test_ask_city_wins_over_confirm_for_same_name_two_cities - тест
+#   test_to_tz_projection_le_3_and_empty_for_reject_ask_street - тест
+#   test_never_throws_on_garbage_raw - тест
+#   test_never_throws_on_garbage_slots_asked_slot_scope - тест
+#   test_never_throws_on_broken_etalon_ready_false - тест
+#   test_slot_city_text_wins_over_city_hint_from_raw - тест
+#   test_slot_city_id_narrows_objects_to_that_city - тест
+#   test_slot_street_id_plus_asked_house_word_number_gives_answer - тест
+#   test_forced_house_cycle_real - тест
+# END_MODULE_MAP
+#
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-007: test_matcher.py — по одному тесту на каждый из 7 исходов (реальные
 #   строки labeled/etalon), тест порядка правил (ask_city раньше confirm), проекция to_tz,

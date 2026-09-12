@@ -6,6 +6,21 @@
 #   LINKS: V-M-DECIDER
 # END_MODULE_CONTRACT
 #
+# START_MODULE_MAP
+#   test_thresholds_derived_from_N - тест
+#   test_reject_without_cues_and_no_asked_slot - тест
+#   test_answer_high_confidence - тест
+#   test_answer_soft_mid_confidence - тест
+#   test_confirm_low_but_above_theta_confirm - тест
+#   test_ask_house_when_house_not_in_list - тест
+#   test_ask_street_when_city_resolved_but_leader_weak - тест
+#   test_reject_when_city_unresolved_and_leader_weak - тест
+#   test_ask_city_wins_over_confirm_for_same_name_two_cities - тест
+#   test_to_tz_ask_house_gives_up_to_3_etalons_of_one_street - тест
+#   test_to_tz_reject_and_ask_street_are_empty - тест
+#   test_to_tz_empty_ranked_is_empty - тест
+# END_MODULE_MAP
+#
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-004: test_decider.py — пороги из N, все исходы, ask_city раньше confirm
 #   при одноимённой улице в двух городах, проекция to_tz (ask_house <=3 эталона, reject -> []).

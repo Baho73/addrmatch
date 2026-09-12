@@ -2,7 +2,18 @@
   <GraphDocuments>
     <GD-MAIN>
       <Path>graph/main.xml</Path>
-      <Owns></Owns>
+      <Owns>
+        <M-NUMERALS />
+        <M-NORMALIZER />
+        <M-PARSER />
+        <M-INDEX />
+        <M-RANKER />
+        <M-DECIDER />
+        <M-MATCHER />
+        <M-RUN />
+        <DF-MATCH />
+        <DF-METRICS />
+      </Owns>
     </GD-MAIN>
   </GraphDocuments>
 </GraceGraphIndex>

@@ -317,6 +317,7 @@ class Matcher:
         # END_BLOCK_FEATURES
 
         return pairs, parse_result, city_res, (None if whole_string else house_norm)
+    # END_BLOCK_PIPELINE
 
     # START_CONTRACT: _objects_for_street_id
     #   PURPOSE: Слот-id улицы (T-007, F1/F4) -> точный объект (все его дома), без поиска имени.
@@ -342,6 +343,7 @@ class Matcher:
         # END_BLOCK_STREET_BY_ID
 
     def _match_impl(self, raw: str, channel: str, slots: dict, asked_slot: str | None, scope: Any) -> MatchResult:
+        # START_BLOCK_MATCH_IMPL
         pairs, parse_result, city_res, house_norm = self._candidate_features_full(
             raw, channel, slots, scope, asked_slot=asked_slot
         )
@@ -404,5 +406,5 @@ class Matcher:
             explain=explain,
             error=None,
         )
-    # END_BLOCK_PIPELINE
+        # END_BLOCK_MATCH_IMPL
     # marker: [Matcher][match][DONE]

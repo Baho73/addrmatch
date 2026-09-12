@@ -313,7 +313,7 @@ def _build_training_examples(matcher: Any, rows: list[dict], neg_per_query: int 
 
 
 class LogregRanker:
-    # START_CONTRACT: __init__
+    # START_CONTRACT: LogregRanker.__init__
     #   PURPOSE: Собрать LogregRanker из уже обученных параметров (используется fit() и load()).
     #   INPUTS: { coef: list[float] - веса по feature_names, intercept: float, freq_median: float -
     #             порог freq_class для страт калибровки, global_calibrator: dict|None, strata_calibrators:
@@ -321,7 +321,7 @@ class LogregRanker:
     #             FEATURE_NAMES (+ синтетическая "street_sim", T-006b); по умолчанию — все FEATURE_NAMES }
     #   OUTPUTS: none
     #   SIDE_EFFECTS: none
-    # END_CONTRACT: __init__
+    # END_CONTRACT: LogregRanker.__init__
     def __init__(
         self,
         coef: list[float],
@@ -365,27 +365,27 @@ class LogregRanker:
         key = _stratum_key(feats, self.freq_median)
         return self.strata_calibrators.get(key, self.global_calibrator)
 
-    # START_CONTRACT: score
+    # START_CONTRACT: LogregRanker.score
     #   PURPOSE: Оценить объект-кандидат вероятностью "это верный объект" (§5.4) — интерфейс ManualRanker.
     #   INPUTS: { feats: dict[str, float] }
     #   OUTPUTS: { float - калиброванная p в [0,1] }
     #   SIDE_EFFECTS: none
-    # END_CONTRACT: score
+    # END_CONTRACT: LogregRanker.score
     def score(self, feats: dict[str, float]) -> float:
-        # START_BLOCK_SCORE
+        # START_BLOCK_LOGREG_SCORE
         z = self._logit(feats)
         p_raw = 1.0 / (1.0 + math.exp(-z))
         return _apply_calibrator(self._calibrator_for(feats), z, p_raw)
-        # END_BLOCK_SCORE
+        # END_BLOCK_LOGREG_SCORE
 
-    # START_CONTRACT: explain
+    # START_CONTRACT: LogregRanker.explain
     #   PURPOSE: Разложить скор по вкладам фичей + метаданные калибровки (интерфейс ManualRanker).
     #   INPUTS: { feats: dict[str, float] }
     #   OUTPUTS: { dict - marker, p, p_raw, z, stratum, calibrator, contributions, feats }
     #   SIDE_EFFECTS: none
-    # END_CONTRACT: explain
+    # END_CONTRACT: LogregRanker.explain
     def explain(self, feats: dict[str, float]) -> dict[str, Any]:
-        # START_BLOCK_EXPLAIN
+        # START_BLOCK_LOGREG_EXPLAIN
         z = self._logit(feats)
         p_raw = 1.0 / (1.0 + math.exp(-z))
         key = _stratum_key(feats, self.freq_median)
@@ -403,7 +403,7 @@ class LogregRanker:
             "contributions": contributions,
             "feats": dict(feats),
         }
-        # END_BLOCK_EXPLAIN
+        # END_BLOCK_LOGREG_EXPLAIN
 
     # START_CONTRACT: fit
     #   PURPOSE: Обучить LogregRanker на labeled-строках (§5.4, T-006/T-006b): сплит 75/25

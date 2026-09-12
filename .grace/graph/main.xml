@@ -1,3 +1,69 @@
 <GraceGraphDocument graceVersion="4.0">
-  <GD-MAIN></GD-MAIN>
+  <GD-MAIN>
+    <M-NUMERALS>
+      <Summary>Русские числительные словами → цифры; корпуса/литеры («18 к а» → 18кА, «7 дробь 2» → 7к2, «5 бэ» → 5Б); фонетические и слипшиеся варианты; флаг неоднозначности. Чистые функции, без импортов из пакета.</Summary>
+      <Path>addrmatch/numerals.py</Path>
+      <Exports>words_to_digits, is_numeral_word, is_house_trigger, LETTER_NAMES, NUMERALS_VERSION</Exports>
+    </M-NUMERALS>
+    <M-NORMALIZER>
+      <Summary>Строка → строка (concept §5.1): регистр, ё→е, латиница-двойники (webchat), стоп-слова, сокращения типов улиц, склейка литер, обрезка > 512, идемпотентность; NORMALIZER_VERSION — хэш правил. Не знает про справочник.</Summary>
+      <Path>addrmatch/normalizer.py</Path>
+      <Exports>normalize, NormResult, NORMALIZER_VERSION</Exports>
+      <M-NUMERALS />
+    </M-NORMALIZER>
+    <M-PARSER>
+      <Summary>Нормализованный текст → слоты (concept §5.2): тип улицы, улица, дом/корпус/литера, диапазон, city_hint, has_address_cues, ambiguous_number. Регулярки; типы приходят от вызывающего (Index).</Summary>
+      <Path>addrmatch/parser.py</Path>
+      <Exports>parse, ParseResult, DEFAULT_STREET_TYPES</Exports>
+      <M-NORMALIZER />
+    </M-PARSER>
+    <M-INDEX>
+      <Summary>Справочник → поиск (concept §5.3): словарь имён улиц (слой 1), объекты имя×город×тип (слой 2), дома (слой 3). Фонетический ключ, Levenshtein, char-n-грам tf-idf; фаззи-разрешение города как приор. BruteForceIndex для учебной базы; сигнатуры — под ГАР (NameVocab).</Summary>
+      <Path>addrmatch/index.py</Path>
+      <Exports>BruteForceIndex, CityResolution, NameCand, ObjCand, phonetic_key, norm_house</Exports>
+      <M-NORMALIZER />
+      <M-PARSER />
+    </M-INDEX>
+    <M-RANKER>
+      <Summary>Скор объекта-кандидата → вероятность «верный» (concept §5.4). FEATURES с interaction-фичами; ManualRanker (сигмоида ручных весов, default) и LogregRanker (логрег + калибровка по стратам, JSON-модель, meets_gates=false на учебной базе). fit() лениво импортирует Matcher для сборки обучающих пар.</Summary>
+      <Path>addrmatch/ranker.py</Path>
+      <Exports>FEATURES, street_sim, ManualRanker, LogregRanker</Exports>
+      <M-MATCHER />
+    </M-RANKER>
+    <M-DECIDER>
+      <Summary>Исход диалога по минимальной ожидаемой цене при N (concept §5.5): порядок правил reject-cues → ask_city → ask_house → answer/answer_soft/confirm → ask_street → reject; options ≤ 3; проекция в формат ТЗ (пустой список = отказ).</Summary>
+      <Path>addrmatch/decider.py</Path>
+      <Exports>Decider, DecisionResult</Exports>
+    </M-DECIDER>
+    <M-MATCHER>
+      <Summary>Публичный API: Matcher(etalon, ranker, N, ablate).match(raw, channel, slots, asked_slot, scope) → MatchResult (decision, candidates ≤ 3, scores, missing_slot, options, slots_resolved, explain, error). Слоты id (точный фильтр) и текст (фаззи); никогда не бросает; candidate_features() для обучения.</Summary>
+      <Path>addrmatch/matcher.py</Path>
+      <Exports>Matcher, MatchResult</Exports>
+      <M-NORMALIZER />
+      <M-PARSER />
+      <M-INDEX />
+      <M-RANKER />
+      <M-DECIDER />
+    </M-MATCHER>
+    <M-RUN>
+      <Summary>Точка входа ТЗ: run.py --adresses --etalon [--predictions --ranker --ablate --N --channel] → один JSON с 9 метриками (top1, top3, reject_precision, reject_recall, p50/p95 мс); замер только match() монотонными часами; preds.jsonl.</Summary>
+      <Path>run.py</Path>
+      <Exports>main</Exports>
+      <M-MATCHER />
+    </M-RUN>
+    <DF-MATCH>
+      <Summary>raw + channel + slots → Normalizer → Parser → Index.resolve_city / candidates / resolve_objects → Ranker.score → Index.houses(top-M) → Decider → MatchResult; проекция в формат ТЗ.</Summary>
+      <M-NORMALIZER />
+      <M-PARSER />
+      <M-INDEX />
+      <M-RANKER />
+      <M-DECIDER />
+      <M-MATCHER />
+    </DF-MATCH>
+    <DF-METRICS>
+      <Summary>labeled.jsonl + etalon.jsonl → Matcher.match() на каждой строке (замер) → метрики ТЗ в stdout, preds.jsonl; инструменты tools/check_preds.py, tools/errors_report.py, tools/simulate_dialog.py, tools/train_ranker.py.</Summary>
+      <M-RUN />
+      <M-MATCHER />
+    </DF-METRICS>
+  </GD-MAIN>
 </GraceGraphDocument>

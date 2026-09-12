@@ -204,7 +204,7 @@ def _glue_bare_literal(text: str) -> str:
 
 def _collapse_spaces(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
-# END_BLOCK_RULES
+# END_BLOCK_LOWER
 
 # START_CONTRACT: normalize
 #   PURPOSE: Свести сырую строку адреса к канонической форме перед Parser (§5.1).
