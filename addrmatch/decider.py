@@ -8,9 +8,9 @@
 # END_MODULE_CONTRACT
 #
 # START_MODULE_MAP
-#   DecisionResult - decision/candidates/scores/missing_slot/options/slots_resolved
+#   DecisionResult - decision/candidates/scores/missing_slot/options/slots_resolved/rule
 #   to_tz - decision + ranked -> (candidates<=3, scores) по таблице проекции §5.5
-#   Decider - decide(): пороги из N, порядок правил §5.5
+#   Decider - decide(): пороги из N, порядок правил §5.5, rule = номер сработавшего правила
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -19,6 +19,11 @@
 #   C-ADDRMATCH-PHASE-A T-005: ask_house (правило 3) требует city_res.status=="resolved";
 #   без разрешённого города и неподтверждённого дома решение падает в ask_street/reject вместо
 #   угадывания дома (docs/errors-a4.md: 19 accepted_negative на нерешённом городе, top1 не задет).
+#   C-ADDRMATCH-PHASE-A T-007: (1) DecisionResult.rule — номер сработавшего правила §5.5 (1..6),
+#   Matcher кладёт его в explain["decision_rule"]/explain["marker"]. (2) _should_ask_city — минимальный
+#   порог уверенности лидера-имени (street_sim>=0.75 или p>=theta_confirm), иначе правило 2 не
+#   срабатывает и негатив с похожим-но-неверным частым именем уходит дальше в ask_street/reject, а
+#   не в ложный ask_city (найдено на T-006 — без порога любой мусор с частым именем давал ask_city).
 # END_CHANGE_SUMMARY
 
 """decider.py — RankedList + CityResolution + ParseResult -> решение диалога (docs/concept.md §5.5).
@@ -45,6 +50,7 @@ class DecisionResult:
     missing_slot: str | None = None
     options: list[Any] = field(default_factory=list)
     slots_resolved: dict[str, Any] = field(default_factory=dict)
+    rule: int = 0  # T-007: номер сработавшего правила §5.5 (1..6), для explain["decision_rule"]
 
 
 # START_CONTRACT: to_tz
@@ -137,7 +143,11 @@ class Decider:
         if len({r["city_id"] for r in same_name}) <= 1:
             return False
         median_freq = statistics.median(r["name_freq"] for r in ranked_sorted)
-        return leader["name_freq"] >= median_freq
+        if leader["name_freq"] < median_freq:
+            return False
+        # T-007: минимальный порог уверенности лидера-имени - без него мусор с похожей-но-неверной
+        # частой улицей уходил в ask_city вместо ask_street/reject (докрутка T-006, см. CHANGE_SUMMARY).
+        return leader.get("street_sim", 0.0) >= 0.75 or leader["p"] >= self.theta_confirm
 
     def _city_options(self, leader: dict, ranked_sorted: list[dict]) -> list[str]:
         same_name = sorted(
@@ -179,6 +189,7 @@ class Decider:
         leader = ranked_sorted[0] if ranked_sorted else None
 
         decision: str
+        rule: int
         missing_slot: str | None = None
         options: list[Any] = []
         slots_resolved: dict[str, Any] = {}
@@ -187,16 +198,17 @@ class Decider:
 
         if not has_cues and asked_slot is None:
             # Правило 1: reject по отсутствию cues.
-            decision = "reject"
+            decision, rule = "reject", 1
         elif leader is not None and self._should_ask_city(leader, ranked_sorted, city_res):
             # Правило 2: ask_city.
-            decision = "ask_city"
+            decision, rule = "ask_city", 2
             missing_slot = "city"
             options = self._city_options(leader, ranked_sorted)
         elif leader is not None and leader["p"] >= self.theta_confirm and house_ok:
             # Правило 4: answer / answer_soft / confirm (дом подтверждён — проверяется раньше
             # ask_house, порядок между 3/4 не влияет на исход, т.к. условия по house_ok
             # взаимоисключающие; см. ниже T-005 про требование resolved у Правила 3).
+            rule = 4
             p1 = leader["p"]
             if p1 >= self.theta_answer:
                 decision = "answer"
@@ -219,16 +231,16 @@ class Decider:
             # house_ok=False) - гейт по city_status=="resolved" не стоил top1 ни одного случая
             # (docs/errors-a4.md). Без разрешённого города дом уточнять не у чего - падаем в
             # Правило 5/6 (ask_street/reject), безопасный отказ вместо угадывания дома.
-            decision = "ask_house"
+            decision, rule = "ask_house", 3
             missing_slot = "house"
             options = sorted(leader["houses"].keys())[:3]
         elif getattr(city_res, "status", "none") == "resolved" and has_cues:
             # Правило 5: ask_street.
-            decision = "ask_street"
+            decision, rule = "ask_street", 5
             missing_slot = "street"
         else:
             # Правило 6: reject (остальное, включая city не resolved + дом не подтверждён).
-            decision = "reject"
+            decision, rule = "reject", 6
 
         candidates, scores = to_tz(
             decision, ranked_sorted, house_norm=house_norm, city_options=options if decision == "ask_city" else None
@@ -240,6 +252,7 @@ class Decider:
             missing_slot=missing_slot,
             options=options,
             slots_resolved=slots_resolved,
+            rule=rule,
         )
         # END_BLOCK_RULES
     # marker: [Decider][decide][DONE]
