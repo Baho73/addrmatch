@@ -1,0 +1,64 @@
+<GraceChangeSpec graceVersion="4.0" status="approved">
+  <C-ADDRMATCH-PHASE-A>
+    <Summary>Фаза A концепции addrmatch (docs/concept.md v0.2 §8): пакет `addrmatch/` из блоков numerals, normalizer, parser, index (BruteForce), ranker (ручные веса → логрег с калибровкой по стратам), decider (стоимости N) и API `match()`; точка входа `run.py` с метриками ТЗ и `--predictions`; pytest; readme по критериям приёмки ТЗ. Результат — сдаваемое тестовое задание, архитектурно готовое к переходу на ГАР.</Summary>
+    <Problem>При отказе геокодера HR-бот переспрашивает адрес по кругу. Нужен локальный резервный матчер: по кривой строке (ASR/чат) и кривому городу найти эталон (улица+дом) из справочника или дать боту точечное решение (подтвердить / спросить город / дом / улицу / отказаться). Ложный уверенный матч дороже переспроса.</Problem>
+    <Goals>
+      <Goal>F1/F2: `match(raw, channel, slots, asked_slot, scope)` возвращает `decision ∈ {answer, answer_soft, confirm, ask_city, ask_house, ask_street, reject}`, `candidates` (эталоны, ≤ 3), калиброванные `scores`, `missing_slot`, `options`, `slots_resolved`, `explain`, `error`.</Goal>
+      <Goal>F5: `python run.py --adresses X --etalon Y [--predictions Z]` печатает JSON с ключами n, n_positive, n_negative, top1, top3, reject_precision, reject_recall, ms_per_request_p50, ms_per_request_p95; `--predictions` пишет JSONL `{id, candidates, scores}`.</Goal>
+      <Goal>H1: top-1 ≥ 0.85 на 400 позитивах labeled с ручными весами; H1a: разрез улица/дом даёт ≥ 5 п.п. против матча целой строкой.</Goal>
+      <Goal>H3/H3a: логрег с interaction-фичами и калибровкой по стратам при N = 10 даёт ≤ 3 ошибок `answer` на val при покрытии answer+answer_soft ≥ 0.75; ни один бин надёжности не отклоняется > 0.1; train/val top-1 расходятся ≤ 5 п.п.</Goal>
+      <Goal>H4/H5: негативы «не про адрес» ловятся `has_address_cues` ≥ 90 % при ложных «не адрес» на позитивах ≤ 1 %; негативы «улица не из эталона» → reject/ask_street ≥ 85 %.</Goal>
+      <Goal>H6: p95 `match()` ≤ 10 мс на учебной базе (CPU, прогретый индекс).</Goal>
+      <Goal>H12: диалоговая симуляция — после `ask_house` + истинный дом → `answer` ≥ 95 %; после `ask_city` + истинный city_id → `answer`/`confirm` ≥ 95 %.</Goal>
+      <Goal>N5: `numerals`, `normalizer`, фаззи-движок не импортируют `index`/данные — тест графа импортов.</Goal>
+    </Goals>
+    <Constraints>
+      <Constraint>Инференс локальный, CPU; зависимости только rapidfuzz, scikit-learn, numpy + stdlib; никаких сетевых вызовов и тяжёлых моделей в `match()` (N1, N2, K7).</Constraint>
+      <Constraint>Контракты блоков по concept.md §5: Normalizer (строка→строка, знает channel, не знает справочник, идемпотентен, хэш версии), Parser (→ слоты + `has_address_cues` + `ambiguous_number`, город не извлекает), Index (`ready`, `has_name`, `resolve_city`→CityResolution, `candidates` по именам, `resolve_objects`, `houses` для top-M, `name_freq`), Ranker (фичи по таблице, p калиброванная, fallback ручные веса на той же шкале), Decider (порядок правил из §5.5, пороги вычисляются из N).</Constraint>
+      <Constraint>Слоты: id из `options` — точный фильтр, текст — фаззи с приоритетом над raw; при `asked_slot != None` флаг `has_address_cues` не требуется.</Constraint>
+      <Constraint>`match()` никогда не бросает: ошибки → `reject` + `error`; ошибки загрузки — на `ready()`. Замер латентности внутри `match()` монотонными часами, без загрузки эталона.</Constraint>
+      <Constraint>Проекция в формат ТЗ строго по concept.md §5.5: answer/answer_soft/confirm → эталоны лидера ≤ 3; ask_city → эталоны лидер-имени в городах options; ask_house → ≤ 3 дома улицы-лидера; ask_street, reject → пустой список.</Constraint>
+      <Constraint>Бюджет 4–6 ч; шаг A5 (логрег) в тайм-боксе 1 ч, при срыве сдаются ручные веса с калибровкой, логрег уходит в readme «что дальше».</Constraint>
+      <Constraint>Файловая GRACE-разметка (MODULE_CONTRACT, MODULE_MAP, START_BLOCK_*, CHANGE_SUMMARY) в каждом модуле пакета; ponytail lite — минимум кода внутри контракта, без абстракций «на потом».</Constraint>
+      <Constraint>Файлы и папки без пробелов и скобок; UTF-8 явно при чтении/записи.</Constraint>
+    </Constraints>
+    <NonGoals>
+      <NonGoal>ГАР: загрузка gar_xml.zip, словарь имён NameVocab, resolve_city по 150 тыс. населённых пунктов, раскрывающийся радиус — фаза B.</NonGoal>
+      <NonGoal>LLM-генерация вариантов имён, синтетика, сиамская char-модель, майнер ошибок, асинхронное обогащение — фазы B/C; в readme только как «что дальше».</NonGoal>
+      <NonGoal>Сервис/HTTP-обёртка, Docker, интеграция с ботом заказчика.</NonGoal>
+      <NonGoal>Координаты в выходе, OSM.</NonGoal>
+    </NonGoals>
+    <AcceptanceCriteria>
+      <Criterion>`pip install -r requirements.txt` в чистом venv и `python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl` завершаются без ошибок; stdout — валидный JSON с 9 ключами ТЗ; preds.jsonl — 500 строк формата ТЗ, пустой список у отказов.</Criterion>
+      <Criterion>Метрики на labeled: top1 ≥ 0.85, top3 ≥ 0.92, reject_precision ≥ 0.80, reject_recall ≥ 0.80, ms_per_request_p95 ≤ 10.</Criterion>
+      <Criterion>`pytest -q` зелёный: ≥ 20 тестов numerals/normalizer (числительные словами, корпуса/литеры, мусор, идемпотентность), тесты parser (формы дома, cues), тест каждого из 7 исходов и порядка правил Decider, тест графа импортов (N5), тест проекции в формат ТЗ.</Criterion>
+      <Criterion>Скрипт диалоговой симуляции печатает доли H12 ≥ 0.95 по обоим сценариям.</Criterion>
+      <Criterion>`Ranker.reliability_report()` печатает график надёжности по стратам; при N = 10 на val ошибок `answer` ≤ 3 (или задокументированный откат на ручные веса по тайм-боксу).</Criterion>
+      <Criterion>readme.md: пошаговое описание, что пробовали и отбросили (со ссылкой на approaches), где ломается (разбор ошибок val), замер времени словами ТЗ с указанием железа, допущения (эталон отложенной выборки, N = 10), «что дальше» (ГАР/словарь имён, LLM офлайн, answer_soft в диалоге, дозапрос).</Criterion>
+      <Criterion>`grace lint --path .` без ошибок; граф и верификация содержат M-*/V-M-* для всех модулей пакета.</Criterion>
+    </AcceptanceCriteria>
+    <AffectedAreas>
+      <M-NUMERALS />
+      <M-NORMALIZER />
+      <M-PARSER />
+      <M-INDEX />
+      <M-RANKER />
+      <M-DECIDER />
+      <M-MATCHER />
+      <M-RUN />
+    </AffectedAreas>
+    <VerificationIntent>
+      <ExpectedCommand>python -m pytest -q</ExpectedCommand>
+      <ExpectedCommand>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</ExpectedCommand>
+      <ExpectedCommand>python tools/simulate_dialog.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl</ExpectedCommand>
+      <ExpectedCommand>grace lint --path .</ExpectedCommand>
+      <ExpectedEvidence>pytest: all passed; run.py: JSON с top1 ≥ 0.85, reject_precision ≥ 0.80, p95 ≤ 10 мс; preds.jsonl 500 строк; simulate_dialog: обе доли ≥ 0.95; grace lint: 0 errors. Лог-маркеры `[Module][function][BLOCK]` в explain и в отладочном логе run.py.</ExpectedEvidence>
+    </VerificationIntent>
+    <Assumptions>
+      <Assumption>Отложенная выборка заказчика построена на том же эталоне (1000, 8 городов) — записывается в readme.</Assumption>
+      <Assumption>N = 10 переспросов за ложный answer — стартовое значение, уточняется у заказчика.</Assumption>
+      <Assumption>Сплит для обучения ранкера 75/25, стратифицированный по каналу и негативам, seed фиксирован.</Assumption>
+      <Assumption>Бот заказчика умеет вернуть канонический id слота из options; иначе сужение работает только фаззи.</Assumption>
+    </Assumptions>
+  </C-ADDRMATCH-PHASE-A>
+</GraceChangeSpec>

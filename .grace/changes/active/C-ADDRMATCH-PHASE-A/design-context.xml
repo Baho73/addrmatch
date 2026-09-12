@@ -1,0 +1,26 @@
+<GraceChangeDesignContext graceVersion="4.0">
+  <Change>C-ADDRMATCH-PHASE-A</Change>
+  <NormativeStatus>non-normative</NormativeStatus>
+  <Rationale>Полный разбор вариантов — docs/approaches.md (22 подхода A1–E5, раздел F про масштаб ГАР, F.1 про словарь имён, G про дозапрос). Концепция — docs/concept.md v0.2. FPF-аудит (docs/fpf-audit.md) нашёл 11 противоречий; три настоящих разрешены ТРИЗ (docs/triz-resolution.md): Р1.1 блокинг по словарю имён вместо города, Р2.1 тяжёлая модель только офлайн, Р3.1+Р3.2 калибровка по стратам и порог из стоимостей N. Остальные закрыты текстом в concept.md v0.2 (порядок правил Decider, единица кандидата на стыках, слоты id/текст, scope, explain).</Rationale>
+  <Alternatives>
+    <Alternative>Матч целой строкой без разреза на улицу/дом — отброшен: дом растворяется в скоре улицы (K1; проверяется абляцией H1a).</Alternative>
+    <Alternative>Sentence-embeddings (rubert-tiny2, e5) + cosine — отброшены для фазы A: слепы к фонетике, тянут torch; замер ради readme при остатке времени (approaches C1).</Alternative>
+    <Alternative>LLM-нормализатор/реранкер в запросе — отброшен: ломает p95 и «только CPU» (fpf П3 → triz Т2); переносится в офлайн-генерацию вариантов (фаза B4).</Alternative>
+    <Alternative>Жёсткий фильтр по городу — отброшен: промах шарда без восстановления при кривом городе (fpf П2 → triz Т1).</Alternative>
+    <Alternative>Ручные пороги τ_a/τ_c/δ — заменены выводом из стоимости N (triz Р3.2); ручные веса сигналов остаются baseline и fallback.</Alternative>
+  </Alternatives>
+  <DeferredDecisions>
+    <Decision>Административная vs муниципальная иерархия ГАР как «город» — фаза B; принята административная.</Decision>
+    <Decision>Значение N — уточнить у заказчика; стартовое 10.</Decision>
+    <Decision>Где хранить пороги: в коде хранится только N и стоимости confirm/soft; τ вычисляются.</Decision>
+    <Decision>Координаты в выходе — не решено, вне фазы A.</Decision>
+  </DeferredDecisions>
+  <Scenarios>
+    <Scenario>voice, город «Нижний Новгород», raw «это киравсгой 16» → Normalizer → «киравской 16» → Parser {street: киравской, house: 16} → Index: имя «Кировская» по фонетике → объект в НН → дом 16 есть → p высокая → answer, candidates [e_XXXX], explain {phonetic: 1.0, lev: 0.7, ngram: 0.6, city_match: 1, house: 1}.</Scenario>
+    <Scenario>voice, город пустой, raw «я живу на улица мира 27» → имя «Мира» частое, город none, объектов в scope > 1 → ask_city, options [Новосибирск, ...] по p; проекция в ТЗ — эталоны «Мира 27» в этих городах по p.</Scenario>
+    <Scenario>voice, raw «профсоюзной сто пятьдесятдва к два» → numerals «152к2» → улица «профсоюзной» → «Профсоюзная» (склонение через сигналы) → дом 152к2 → answer.</Scenario>
+    <Scenario>voice, raw «да куда скажете туда и приду» → has_address_cues False, asked_slot None → reject → пустой список.</Scenario>
+    <Scenario>webchat, город «Новокузнецк», raw «удобно ул. новоселов 67» → cues True, имя «Новоселов» не в словаре (лучший скор низкий) → ask_street → пустой список (отказ по ТЗ).</Scenario>
+    <Scenario>Дозапрос: первый вызов → ask_house (улица уверенная, дом не разобран); бот спрашивает; второй вызов raw «шестьдесят», asked_slot house, slots {street_id} → cues не требуется → дом 60 → answer.</Scenario>
+  </Scenarios>
+</GraceChangeDesignContext>
