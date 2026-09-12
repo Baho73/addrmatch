@@ -1,4 +1,4 @@
-<GraceChangeSpec graceVersion="4.0" status="approved">
+<GraceChangeSpec graceVersion="4.0" status="applied">
   <C-ADDRMATCH-PHASE-A>
     <Summary>Фаза A концепции addrmatch (docs/concept.md v0.2 §8): пакет `addrmatch/` из блоков numerals, normalizer, parser, index (BruteForce), ranker (ручные веса → логрег с калибровкой по стратам), decider (стоимости N) и API `match()`; точка входа `run.py` с метриками ТЗ и `--predictions`; pytest; readme по критериям приёмки ТЗ. Результат — сдаваемое тестовое задание, архитектурно готовое к переходу на ГАР.</Summary>
     <Problem>При отказе геокодера HR-бот переспрашивает адрес по кругу. Нужен локальный резервный матчер: по кривой строке (ASR/чат) и кривому городу найти эталон (улица+дом) из справочника или дать боту точечное решение (подтвердить / спросить город / дом / улицу / отказаться). Ложный уверенный матч дороже переспроса.</Problem>

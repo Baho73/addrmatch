@@ -1,4 +1,4 @@
-<GraceChangePlan graceVersion="4.0" status="approved">
+<GraceChangePlan graceVersion="4.0" status="applied">
   <C-ADDRMATCH-PHASE-A>
     <IntentSummary>Создать пакет `addrmatch/` с нуля по концепции v0.2: восемь модулей (M-NUMERALS, M-NORMALIZER, M-PARSER, M-INDEX, M-RANKER, M-DECIDER, M-MATCHER, M-RUN), тесты, симуляция диалога, readme. Порядок — шаги A0–A7 концепции: сначала каркас и метрики (чтобы каждый следующий шаг сразу измерялся), затем модули по потоку данных, затем обучение ранкера в тайм-боксе, затем исходы диалога и readme. Противоречия сняты на этапе спеки (triz-resolution.md): блокинг по словарю имён, тяжёлое только офлайн, порог из стоимости N — план компромиссов не содержит. Ponytail lite: минимальный код внутри контрактов, никаких заготовок под ГАР кроме стабильных сигнатур Index.</IntentSummary>
     <BaselineAssertions>
