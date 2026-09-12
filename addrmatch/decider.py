@@ -16,6 +16,9 @@
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-004: decider.py — пороги answer/answer_soft/confirm из N, порядок
 #   правил reject->ask_city->ask_house->answer*->ask_street->reject, проекция to_tz (§5.5).
+#   C-ADDRMATCH-PHASE-A T-005: ask_house (правило 3) требует city_res.status=="resolved";
+#   без разрешённого города и неподтверждённого дома решение падает в ask_street/reject вместо
+#   угадывания дома (docs/errors-a4.md: 19 accepted_negative на нерешённом городе, top1 не задет).
 # END_CHANGE_SUMMARY
 
 """decider.py — RankedList + CityResolution + ParseResult -> решение диалога (docs/concept.md §5.5).
@@ -180,6 +183,8 @@ class Decider:
         options: list[Any] = []
         slots_resolved: dict[str, Any] = {}
 
+        house_ok = leader is not None and self._house_ok(leader, house_norm, ambiguous_number)
+
         if not has_cues and asked_slot is None:
             # Правило 1: reject по отсутствию cues.
             decision = "reject"
@@ -188,15 +193,10 @@ class Decider:
             decision = "ask_city"
             missing_slot = "city"
             options = self._city_options(leader, ranked_sorted)
-        elif leader is not None and leader["p"] >= self.theta_confirm and not self._house_ok(
-            leader, house_norm, ambiguous_number
-        ):
-            # Правило 3: ask_house.
-            decision = "ask_house"
-            missing_slot = "house"
-            options = sorted(leader["houses"].keys())[:3]
-        elif leader is not None and leader["p"] >= self.theta_confirm:
-            # Правило 4: answer / answer_soft / confirm.
+        elif leader is not None and leader["p"] >= self.theta_confirm and house_ok:
+            # Правило 4: answer / answer_soft / confirm (дом подтверждён — проверяется раньше
+            # ask_house, порядок между 3/4 не влияет на исход, т.к. условия по house_ok
+            # взаимоисключающие; см. ниже T-005 про требование resolved у Правила 3).
             p1 = leader["p"]
             if p1 >= self.theta_answer:
                 decision = "answer"
@@ -206,12 +206,28 @@ class Decider:
                 decision = "confirm"
             matched_house = house_norm if house_norm in leader["houses"] else next(iter(leader["houses"]), None)
             slots_resolved = {"city_id": leader["city_id"], "street_id": leader["street_id"], "house": matched_house}
+        elif (
+            leader is not None
+            and leader["p"] >= self.theta_confirm
+            and getattr(city_res, "status", "none") == "resolved"
+        ):
+            # Правило 3: ask_house. T-005-докрутка: раньше срабатывало при любом city_status,
+            # включая none/unresolved - на labeled 19 негативов (город не из эталона/не
+            # разрешён) получали house-опции и засчитывались как "принятый" ответ (reject_recall
+            # 0.65->35 accepted_negative). На всех 400 позитивах ни один настоящий ask_house не
+            # требует неразрешённого города (city_match=0.5 не встречается среди позитивов с
+            # house_ok=False) - гейт по city_status=="resolved" не стоил top1 ни одного случая
+            # (docs/errors-a4.md). Без разрешённого города дом уточнять не у чего - падаем в
+            # Правило 5/6 (ask_street/reject), безопасный отказ вместо угадывания дома.
+            decision = "ask_house"
+            missing_slot = "house"
+            options = sorted(leader["houses"].keys())[:3]
         elif getattr(city_res, "status", "none") == "resolved" and has_cues:
             # Правило 5: ask_street.
             decision = "ask_street"
             missing_slot = "street"
         else:
-            # Правило 6: reject (остальное).
+            # Правило 6: reject (остальное, включая city не resolved + дом не подтверждён).
             decision = "reject"
 
         candidates, scores = to_tz(
