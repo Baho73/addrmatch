@@ -15,6 +15,9 @@
 #   "никогда не бросает" (raw=None/123, slots/asked_slot/scope мусор, битый etalon), слоты
 #   city/street текст vs id (city text побеждает city_hint, city-id сужает объекты через scope,
 #   street-id + asked_slot="house" + числительное словом -> answer).
+#   C-ADDRMATCH-PHASE-A T-007b: + тест полного цикла forced_house (tools/simulate_dialog.strip_house)
+#   на реальной строке a_0425 «ул. таганская 8п/2» — срезать дом -> ask_house -> второй вызов с
+#   slots-id улицы/города, asked_slot="house", raw=истинный дом -> answer с верным candidates[0].
 # END_CHANGE_SUMMARY
 
 """tests/test_matcher.py — docs/concept.md §3 F1/F2/F4, §5.5; plan.xml T-007."""
@@ -266,3 +269,35 @@ def test_slot_street_id_plus_asked_house_word_number_gives_answer() -> None:
     assert second.decision == "answer"
     assert second.candidates[:1] == ["sid_60"]
 # END_BLOCK_SLOTS
+
+
+# START_BLOCK_FORCED_HOUSE_CYCLE
+def test_forced_house_cycle_real(matcher: Matcher, labeled: list[dict], etalon: list[dict]) -> None:
+    """T-007b tools/simulate_dialog.strip_house на реальной строке a_0425 «ул. таганская 8п/2»:
+    срезать дом (ParseResult.city_hint+street_type+street) -> первый match() без дома -> ask_house;
+    второй с slots-id улицы/города, asked_slot="house", raw=истинный дом -> answer, верный лидер."""
+    from tools.simulate_dialog import strip_house  # tools/ не пакет с __init__.py, но repo root на sys.path
+
+    row = _row(labeled, "a_0425")
+    true_etalon = next(e for e in etalon if e["etalon_id"] == row["etalon_id"])
+
+    stripped, cut_house = strip_house(row["raw_adress"], row["channel"])
+    assert stripped is not None and cut_house  # дом в исходном raw parser нашёл
+    assert stripped == "улица таганская"
+
+    first = matcher.match(stripped, channel=row["channel"], slots={"city": row["city"]})
+    assert first.decision == "ask_house"
+
+    street_id = first.explain.get("leader_street_id")
+    city_id = first.explain.get("leader_city_id")
+    assert street_id and city_id
+
+    second = matcher.match(
+        str(true_etalon["house"]),
+        channel=row["channel"],
+        slots={"street": {"id": street_id}, "city": {"id": city_id}},
+        asked_slot="house",
+    )
+    assert second.decision in ("answer", "answer_soft")
+    assert second.candidates[:1] == [row["etalon_id"]]
+# END_BLOCK_FORCED_HOUSE_CYCLE
