@@ -1,0 +1,5 @@
+<GraceDeployment graceVersion="4.0">
+  <Applicability>applicable</Applicability>
+  <Target>Фаза A: архив/репозиторий для проверяющих — pip install -r requirements.txt и python run.py --adresses ... --etalon ... на чистой CPU-машине. Фаза B: библиотека внутри бота заказчика + gar.sqlite; сборка индекса и LLM-генерация вариантов — офлайн на машине Ивана (GPU 12 ГБ).</Target>
+  <Notes>Фаза A: сдача архивом/репозиторием; гейт — run.py на чистом venv печатает метрики, pytest зелёный, readme по критериям приёмки ТЗ. Фаза B: библиотека + gar.sqlite внутри контура заказчика; индекс собирается офлайн и версионируется хэшем Normalizer; откат = предыдущий индекс. Docker-деплоя нет.</Notes>
+</GraceDeployment>

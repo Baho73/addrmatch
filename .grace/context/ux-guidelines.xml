@@ -1,0 +1,6 @@
+<GraceUXGuidelines graceVersion="4.0">
+  <Applicability>not-applicable</Applicability>
+  <Reason>Библиотека без собственного UI; реплики диалога формирует бот заказчика по decision/options/slots_resolved из ответа match().</Reason>
+  <Audience>HR-бот заказчика (телефон и чат) через API match(); разработчик (Иван) — переиспользование numerals/normalizer/фаззи-движка в других пайплайнах; проверяющие тестового задания через run.py.</Audience>
+  <Guideline>Исходы для бота: точечный вопрос на один слот (город / дом / улица), ≤ 3 варианта в options, answer_soft проговаривает адрес как неявное подтверждение.</Guideline>
+</GraceUXGuidelines>

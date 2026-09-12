@@ -1,0 +1,10 @@
+<GraceTechnology graceVersion="4.0">
+  <Language>Python 3.11+</Language>
+  <Runtime>CPython, CPU only at inference; GPU допустим только офлайн (генерация вариантов имён, обучение)</Runtime>
+  <Framework>Библиотека без фреймворка: rapidfuzz, scikit-learn (логрег + калибровка), numpy; stdlib для остального. Никаких сетевых вызовов на инференсе.</Framework>
+  <TestingStack>pytest (юнит-тесты numerals/normalizer/parser/decider, тест графа импортов), run.py как интеграционный прогон метрик на data/adresses_labeled.jsonl, скрипт диалоговой симуляции</TestingStack>
+  <Observability>Поле explain в ответе match() (разложение скора лидера по сигналам), логирование входа/выхода обученных компонентов, reliability_report ранкера; замер латентности монотонными часами внутри match()</Observability>
+  <OperationalConstraints>
+    <Constraint>Prefer existing project libraries and established repository patterns.</Constraint>
+  </OperationalConstraints>
+</GraceTechnology>
