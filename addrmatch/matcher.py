@@ -2,11 +2,11 @@
 #   PURPOSE: Публичная точка сопоставления адреса со справочником; MatchResult + Matcher.
 #   SCOPE: Контракт F2/F5 (docs/concept.md §3, §5). A3 — рабочий конвейер: Normalizer -> Parser ->
 #          Index -> Ranker -> Decider. Поддерживает --ablate whole_string|no_phonetic (H1a, H2).
-#          T-006: candidate_features() выносит шаг "конвейер -> фичи кандидатов" наружу (без
+#          candidate_features() выносит шаг "конвейер -> фичи кандидатов" наружу (без
 #          ранжирования/решения) для обучения LogregRanker (tools/train_ranker.py), не дублируя код
 #          match(); ranker="logreg"|"manual"|объект переключает Ranker (fallback manual при
 #          отсутствии addrmatch/ranker_model.json).
-#          T-007: match(slots, asked_slot, scope) — API диалога (F1/F4). Слоты `city`/`street`
+#          match(slots, asked_slot, scope) — API диалога (F1/F4). Слоты `city`/`street`
 #          принимают либо текст (str, фаззи, приоритет над raw) либо id (dict {"id": <city_id|
 #          street_id>}, точный фильтр без фаззи); `house` — всегда текст/номер (str). `street_id`
 #          — строка формата "<city_id>||<street_type>||<name_id>" (контракт index.py, тот же, что
@@ -21,7 +21,7 @@
 #   MatchResult - структура ответа match() по контракту F2
 #   Matcher - ready()/match()/candidate_features(): normalize->parse->candidates->resolve_objects->
 #             ->features(->score->decide только в match())
-#   Matcher._slot_parts - слот (city/street) -> (текст, id) по контракту T-007
+#   Matcher._slot_parts - слот (city/street) -> (текст, id) по контракту диалога (F1/F4)
 #   Matcher._objects_for_street_id - слот-id улицы -> ObjCand точного объекта (все его дома)
 # END_MODULE_MAP
 #
@@ -64,7 +64,7 @@ DECISIONS = ("answer", "answer_soft", "confirm", "ask_city", "ask_house", "ask_s
 
 
 # START_CONTRACT: _slot_parts
-#   PURPOSE: Разобрать значение слота city/street на (текст, id) по контракту T-007 (F1/F4).
+#   PURPOSE: Разобрать значение слота city/street на (текст, id) по контракту диалога (F1/F4).
 #   INPUTS: { value: str|dict|None - текст (фаззи) | {"id": ...} (точный фильтр) | не задан }
 #   OUTPUTS: { tuple[str|None, Any|None] - (текст или None, id или None); ровно один из двух }
 #   SIDE_EFFECTS: none
@@ -101,7 +101,7 @@ class Matcher:
     # START_CONTRACT: __init__
     #   PURPOSE: Загрузить эталонный справочник и подготовить матчер к работе.
     #   INPUTS: { etalon: list[dict] - эталонные адреса (etalon_id/city/street_type/street/house/...),
-    #             ranker: str("logreg"|"manual")|объект(score/explain)|None - выбор ранкера (T-006);
+    #             ranker: str("logreg"|"manual")|объект(score/explain)|None - выбор ранкера;
     #             None/"manual" -> ManualRanker; "logreg" -> LogregRanker.load(addrmatch/ranker_model.json),
     #             fallback ManualRanker + предупреждение при отсутствии/битом файле; объект - подмена
     #             напрямую (тесты/эксперименты). N: float - стоимость ложного answer в переспросах (N4),
@@ -125,7 +125,7 @@ class Matcher:
             self._decider = Decider(N=N)
             self._ready = self._index.ready()
             self._load_error: str | None = None
-            # T-007: city_id (нормализованный, index.py) -> исходное написание из etalon, для
+            # city_id (нормализованный, index.py) -> исходное написание из etalon, для
             # options ask_city [{"id","name"}] (§3 F2) - Index не хранит исходный регистр города.
             self._city_display: dict[str, str] = {}
             for row in etalon:
@@ -144,7 +144,7 @@ class Matcher:
     # START_BLOCK_RANKER_SELECT
     def _resolve_ranker(self, ranker: Any) -> Any:
         """None/"manual" -> ManualRanker; "logreg" -> LogregRanker.load с fallback на ManualRanker
-        (файла нет/битый) + предупреждение в explain (T-006); объект (score/explain) - как есть."""
+        (файла нет/битый) + предупреждение в explain; объект (score/explain) - как есть."""
         if ranker is None or ranker == "manual":
             return ManualRanker()
         if ranker == "logreg":
@@ -197,7 +197,7 @@ class Matcher:
 
     # START_CONTRACT: candidate_features
     #   PURPOSE: Прогнать конвейер (Normalizer->Parser->Index) до фичей кандидатов-объектов, без
-    #            ранжирования/решения (T-006: обучающая выборка LogregRanker.fit(), без дублирования
+    #            ранжирования/решения (обучающая выборка LogregRanker.fit(), без дублирования
     #            кода match()).
     #   INPUTS: { raw: str, channel: str, slots: dict|None, scope: list[str]|None }
     #   OUTPUTS: { list[tuple[ObjCand, dict[str, float]]] - кандидаты-объекты + их фичи (FEATURES, §5.4) }
@@ -217,13 +217,13 @@ class Matcher:
     def _candidate_features_full(
         self, raw: str, channel: str, slots: dict, scope: Any, asked_slot: str | None = None
     ) -> tuple[list[tuple[Any, dict[str, float]]], Any, Any, str | None]:
-        """Конвейер до фичей кандидатов (общий шаг match() и candidate_features(), T-006): parse ->
+        """Конвейер до фичей кандидатов (общий шаг match() и candidate_features()): parse ->
         city -> street_q -> Index.candidates/resolve_objects -> фичи (+ n_close вторым проходом)."""
         norm = normalize(raw or "", channel=channel)
         parse_result = parse(norm, self._index.street_types, has_name=self._index.has_name)
 
         # START_BLOCK_CITY
-        # T-007: слот-id города - точный, без фаззи (F1/F4). Слот-текст - фаззи (resolve_city),
+        # Слот-id города - точный, без фаззи (F1/F4). Слот-текст - фаззи (resolve_city),
         # приоритет над raw. asked_slot="city" без явного слота - raw целиком трактуется как ответ
         # на дозапрос про город (parser кладёт голое имя города в street/city_hint только при
         # наличии типа улицы дальше в строке - для "москва" самой по себе нужен явный обход).
@@ -251,7 +251,7 @@ class Matcher:
         # END_BLOCK_CITY
 
         # START_BLOCK_STREET_QUERY
-        # T-007: слот-id улицы - точный фильтр, поиск имени (Index.candidates) пропускается
+        # Слот-id улицы - точный фильтр, поиск имени (Index.candidates) пропускается
         # целиком (F1/F4); слот-текст - фаззи, приоритет над raw, как и раньше.
         street_text, street_id_slot = _slot_parts(slots.get("street"))
         whole_string = self._ablate == "whole_string"
@@ -305,7 +305,7 @@ class Matcher:
             feats["freq_x_city"] = feats["name_freq"] * feats["city_match"]
             feats["freq_x_phon"] = feats["name_freq"] * feats["phon"]
             feats["voice_x_lev"] = feats["channel_voice"] * feats["lev"]
-            feats["sim_x_house"] = street_sim(feats) * feats["house_in_list"]  # T-006
+            feats["sim_x_house"] = street_sim(feats) * feats["house_in_list"]  # interaction-фича
             pairs.append((oc, feats))
 
         # n_close: второй проход — число кандидатов в пределах 0.05 от лучшего сырого скора улицы.
@@ -320,7 +320,7 @@ class Matcher:
     # END_BLOCK_PIPELINE
 
     # START_CONTRACT: _objects_for_street_id
-    #   PURPOSE: Слот-id улицы (T-007, F1/F4) -> точный объект (все его дома), без поиска имени.
+    #   PURPOSE: Слот-id улицы (F1/F4) -> точный объект (все его дома), без поиска имени.
     #   INPUTS: { street_id: str - "<city_id>||<street_type>||<name_id>" (формат index.py, тот же,
     #             что отдаёт slots_resolved["street_id"]/explain["leader_street_id"]), scope: список
     #             city_id|None }
@@ -360,7 +360,7 @@ class Matcher:
                 "houses": r["obj"].houses,
                 "p": r["p"],
                 "name_freq": r["feats"]["name_freq"],
-                "street_sim": street_sim(r["feats"]),  # T-007: гейт ask_city по уверенности имени
+                "street_sim": street_sim(r["feats"]),  # гейт ask_city по уверенности имени
             }
             for r in ranked
         ]
@@ -374,7 +374,7 @@ class Matcher:
         )
 
         # START_BLOCK_EXPLAIN
-        # T-007: explain = разложение скора Ranker (переименовано в ranker_marker) + marker/
+        # explain = разложение скора Ranker (переименовано в ranker_marker) + marker/
         # decision_rule Decider (обязателен по контракту) + leader_street_id/city_id, нужные
         # боту для второго вызова после ask_house, где slots_resolved по §5.5 остаётся пустым.
         explain: dict[str, Any] = dict(self._ranker.explain(ranked[0]["feats"])) if ranked else {}
@@ -389,7 +389,7 @@ class Matcher:
         # END_BLOCK_EXPLAIN
 
         # START_BLOCK_OPTIONS
-        # T-007: ask_city -> options в формате [{"id","name"}] (§3 F2); Decider отдаёт голые
+        # ask_city -> options в формате [{"id","name"}] (§3 F2); Decider отдаёт голые
         # city_id (чистая функция без DEPENDS на данные) - имя достаёт Matcher из city_display.
         options = result.options
         if result.decision == "ask_city":

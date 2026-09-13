@@ -41,7 +41,7 @@
     <V-M-RUN>
       <Command>python run.py --adresses test_task_adress_match/data/adresses_labeled.jsonl --etalon test_task_adress_match/data/etalon.jsonl --predictions preds.jsonl</Command>
       <Command>python tools/check_preds.py preds.jsonl --expect 500</Command>
-      <Scenario>Один JSON в stdout с 9 ключами ТЗ; на labeled: top1 ≥ 0.85 (факт 0.9725), top3 ≥ 0.92 (0.98), reject_precision ≥ 0.80 (0.966), reject_recall ≥ 0.80 (0.85), p95 ≤ 10 мс (≈1.5 мс, i9-10920X; версии закреплены ==); preds.jsonl 500 строк формата {id, candidates, scores}, пустой список = отказ. Абляции: --ablate whole_string → top1 0.645; --ablate no_phonetic → top1 0.97.</Scenario>
+      <Scenario>Один JSON в stdout с 9 ключами ТЗ; на labeled: top1 ≥ 0.85 (факт 0.9725), top3 ≥ 0.92 (0.98), reject_precision ≥ 0.80 (0.966), reject_recall ≥ 0.80 (0.85), p95 ≤ 10 мс (факт ≈2.2 мс, i9-10920X; версии закреплены ==); preds.jsonl 500 строк формата {id, candidates, scores}, пустой список = отказ. Абляции: --ablate whole_string → top1 0.60; --ablate no_phonetic → top1 0.97.</Scenario>
       <Marker>[Run][main][METRICS]</Marker>
     </V-M-RUN>
   </VD-MAIN>

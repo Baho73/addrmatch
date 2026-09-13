@@ -8,10 +8,6 @@
 - Данные ТЗ: `test_task_adress_match/data/*.jsonl`. ГАР (`gar_xml.zip`, 53 ГБ) качается в `F:\Downloads`; выборочная распаковка в фазе B.
 - Ponytail: `lite` (поднимать до `full` только на `grace-execute`).
 
-## Два трека
-- Этот репозиторий (`Baho73/addrmatch`) — **только тестовое задание** (фаза A). Ничего из боевой разработки сюда не коммитить.
-- Боевая версия на ГАР — отдельный приватный репозиторий `Baho73/addrmatch-pro`, локально `D:\Pythonddrmatch-pro` (там же `data/gar.sqlite`).
-
 ## Документы
 - `docs/concept.md` — концепция v0.2 (нормативная для spec).
 - `docs/approaches.md` — варианты решений; `docs/triz-resolution.md` — разрешённые противоречия.

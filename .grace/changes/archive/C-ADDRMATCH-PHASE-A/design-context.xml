@@ -1,7 +1,7 @@
 <GraceChangeDesignContext graceVersion="4.0">
   <Change>C-ADDRMATCH-PHASE-A</Change>
   <NormativeStatus>non-normative</NormativeStatus>
-  <Rationale>Полный разбор вариантов — docs/approaches.md (22 подхода A1–E5, раздел F про масштаб ГАР, F.1 про словарь имён, G про дозапрос). Концепция — docs/concept.md v0.2. FPF-аудит (docs/fpf-audit.md) нашёл 11 противоречий; три настоящих разрешены ТРИЗ (docs/triz-resolution.md): Р1.1 блокинг по словарю имён вместо города, Р2.1 тяжёлая модель только офлайн, Р3.1+Р3.2 калибровка по стратам и порог из стоимостей N. Остальные закрыты текстом в concept.md v0.2 (порядок правил Decider, единица кандидата на стыках, слоты id/текст, scope, explain).</Rationale>
+  <Rationale>Полный разбор вариантов — docs/approaches.md (22 подхода A1–E5, раздел F про масштаб ГАР, F.1 про словарь имён, G про дозапрос). Концепция — docs/concept.md v0.2. Внутренний аудит спецификации нашёл 11 противоречий; три настоящих разрешены ТРИЗ (docs/triz-resolution.md): Р1.1 блокинг по словарю имён вместо города, Р2.1 тяжёлая модель только офлайн, Р3.1+Р3.2 калибровка по стратам и порог из стоимостей N. Остальные закрыты текстом в concept.md v0.2 (порядок правил Decider, единица кандидата на стыках, слоты id/текст, scope, explain).</Rationale>
   <Alternatives>
     <Alternative>Матч целой строкой без разреза на улицу/дом — отброшен: дом растворяется в скоре улицы (K1; проверяется абляцией H1a).</Alternative>
     <Alternative>Sentence-embeddings (rubert-tiny2, e5) + cosine — отброшены для фазы A: слепы к фонетике, тянут torch; замер ради readme при остатке времени (approaches C1).</Alternative>

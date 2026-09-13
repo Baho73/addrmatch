@@ -1,4 +1,7 @@
-"""H7: сколько уникальных имён улиц в ГАР. Читает AS_ADDR_OBJ_* всех регионов прямо из zip."""
+"""H7: сколько уникальных имён улиц в ГАР. Читает AS_ADDR_OBJ_* всех регионов прямо из zip.
+
+Требует архив ГАР gar_xml.zip (~57 ГБ, fias.nalog.ru); результат прогона сохранён в
+docs/gar-h7-result.json — повторный запуск без архива не нужен, если числа не изменились."""
 import zipfile, re, collections, json, sys, time
 import xml.etree.ElementTree as ET
 

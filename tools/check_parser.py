@@ -1,6 +1,6 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Прогнать normalize+parse на всём adresses_labeled.jsonl и напечатать метрики
-#            приёмки T-003 (house_found_rate, street_type_found_rate, cues_rate по негативам).
+#            приёмки (house_found_rate, street_type_found_rate, cues_rate по негативам).
 #   SCOPE: CLI-отчёт для A2 (docs/concept.md §5.2); ничего не пишет, кроме stdout.
 #   DEPENDS: M-NORMALIZER, M-PARSER
 #   LINKS: V-M-PARSER
@@ -17,7 +17,7 @@
 #   разбор негативов на тип-1/тип-2 с cues_rate, топ-10 худших примеров каждого рода.
 # END_CHANGE_SUMMARY
 
-"""tools/check_parser.py — метрики приёмки Parser (см. docs/concept.md §5.2, T-003)."""
+"""tools/check_parser.py — метрики приёмки Parser (см. docs/concept.md §5.2)."""
 
 from __future__ import annotations
 
@@ -80,14 +80,14 @@ def classify_negative(norm_text: str, street_type: str | None) -> str:
 
 
 # START_CONTRACT: main
-#   PURPOSE: Прогнать normalize+parse по --adresses, напечатать метрики приёмки T-003.
+#   PURPOSE: Прогнать normalize+parse по --adresses, напечатать метрики приёмки.
 #   INPUTS: { --adresses: путь к labeled JSONL, --etalon: путь к эталону JSONL }
 #   OUTPUTS: none (печатает отчёт в stdout)
 #   SIDE_EFFECTS: чтение JSONL с диска
 # END_CONTRACT: main
 def main() -> None:
     # START_BLOCK_ARGS
-    argp = argparse.ArgumentParser(description="Метрики Parser (T-003)")
+    argp = argparse.ArgumentParser(description="Метрики Parser")
     argp.add_argument("--adresses", required=True)
     argp.add_argument("--etalon", required=True)
     args = argp.parse_args()

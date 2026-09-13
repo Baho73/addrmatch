@@ -1,7 +1,7 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Разобрать промахи Matcher на adresses_labeled.jsonl по типам ошибок (A4) и сохранить
 #            docs/errors-a4.md; печатает сводку по классам и распределение decision (7 исходов x
-#            позитивы/негативы) для readme (A7) и T-006 (H5 — негативы вида 2 -> reject/ask_street).
+#            позитивы/негативы) для readme (A7) и H5 (негативы вида 2 -> reject/ask_street).
 #   SCOPE: CLI-отчёт, ничего не меняет в addrmatch/; строит собственный BruteForceIndex только
 #          для диагностики (top-3 имён при поиске улицы) - Matcher не отдаёт внутреннее состояние.
 #   DEPENDS: M-MATCHER, M-NORMALIZER, M-PARSER, M-INDEX
@@ -12,9 +12,11 @@
 #   classify_positive - top1_hit | top1_miss-подкласс (street_not_found/wrong_object/
 #                        house_not_parsed/house_mismatch/wrong_ranking/rejected_positive)
 #   classify_negative - correctly_rejected | accepted_negative (type1/type2, эвристика check_parser.py)
-#   build_report - прогон Matcher по всем labeled, сбор классов+примеров+decision-распределения
+#   build_report - прогон Matcher по всем labeled, сбор классов+примеров+decision-распределения+records
+#   strict_projection_metrics - top1/top3/reject_precision/reject_recall при проекции confirm/ask_*
+#                                -> [] (только answer/answer_soft остаются "принятыми")
 #   render_markdown - таблицы классов + до 10 примеров на класс -> docs/errors-a4.md
-#   main - CLI: --adresses --etalon [--N], печать сводки, запись markdown
+#   main - CLI: --adresses --etalon [--N], печать сводки (+ строгая проекция), запись markdown
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -22,9 +24,12 @@
 #   негативов (accepted/type1/type2) на всём labeled, docs/errors-a4.md, decision x positive/negative.
 #   note-колонка помечает house_mismatch, объяснимый дубликатом строки в etalon.jsonl (одинаковый
 #   city/street_type/street/house под двумя etalon_id) — сводка в "## Наблюдения".
+#   post-A follow-up (review): + strict_projection_metrics — метрики ТЗ при жёсткой проекции
+#   (confirm/ask_* -> [], только answer/answer_soft "приняты") и печать разреза принятых негативов
+#   на уверенные (answer/answer_soft) и переспросы (confirm/ask_city/ask_house), readme §3.
 # END_CHANGE_SUMMARY
 
-"""tools/errors_report.py — разбор ошибок A4 (docs/concept.md §5.5, plan.xml T-005)."""
+"""tools/errors_report.py — разбор ошибок A4 (docs/concept.md §5.5)."""
 
 from __future__ import annotations
 
@@ -158,7 +163,8 @@ def classify_negative(candidates: list[str], norm_text: str, street_type: str | 
 # START_CONTRACT: build_report
 #   PURPOSE: Прогнать Matcher по всем labeled, собрать классы/примеры/decision-распределение.
 #   INPUTS: { rows: list[dict], etalon: list[dict], N: float }
-#   OUTPUTS: { dict - class_counts, decision_counts, examples (class -> list[dict]) }
+#   OUTPUTS: { dict - class_counts, decision_counts, examples (class -> list[dict]), records
+#              (list[dict] - id/etalon_id/decision/candidates каждой строки, для strict_projection_metrics) }
 #   SIDE_EFFECTS: построение Matcher и отдельного диагностического BruteForceIndex (только чтение)
 # END_CONTRACT: build_report
 def build_report(rows: list[dict], etalon: list[dict], N: float = 10) -> dict[str, Any]:
@@ -170,6 +176,7 @@ def build_report(rows: list[dict], etalon: list[dict], N: float = 10) -> dict[st
     class_counts: Counter[str] = Counter()
     decision_counts: dict[str, Counter[str]] = {"positive": Counter(), "negative": Counter()}
     examples: dict[str, list[dict]] = defaultdict(list)
+    records: list[dict] = []
 
     for row in rows:
         raw = row.get("raw_adress", "")
@@ -183,6 +190,9 @@ def build_report(rows: list[dict], etalon: list[dict], N: float = 10) -> dict[st
 
         kind = "positive" if etalon_id is not None else "negative"
         decision_counts[kind][result.decision] += 1
+        records.append(
+            {"id": row.get("id"), "etalon_id": etalon_id, "decision": result.decision, "candidates": result.candidates}
+        )
 
         feats = result.explain.get("feats", {}) if result.explain else {}
         example = {
@@ -209,8 +219,53 @@ def build_report(rows: list[dict], etalon: list[dict], N: float = 10) -> dict[st
         if cls != "top1_hit" and cls != "correctly_rejected" and len(examples[cls]) < 10:
             examples[cls].append(example)
 
-    return {"class_counts": class_counts, "decision_counts": decision_counts, "examples": examples}
+    return {
+        "class_counts": class_counts,
+        "decision_counts": decision_counts,
+        "examples": examples,
+        "records": records,
+    }
     # END_BLOCK_RUN
+
+
+# START_CONTRACT: strict_projection_metrics
+#   PURPOSE: Метрики ТЗ (top1/top3/reject_precision/reject_recall) при строгой проекции: только
+#            answer/answer_soft оставляют candidates, confirm/ask_* и reject проецируются в []
+#            (readme §3 "Проекция confirm/ask_*" — сколько из принятых негативов уверенные, а не
+#            переспросы).
+#   INPUTS: { records: list[dict] - build_report()["records"] }
+#   OUTPUTS: { dict - n, n_positive, n_negative, top1, top3, reject_precision, reject_recall }
+#   SIDE_EFFECTS: none
+# END_CONTRACT: strict_projection_metrics
+def strict_projection_metrics(records: list[dict]) -> dict[str, Any]:
+    # START_BLOCK_STRICT
+    positives = [r for r in records if r["etalon_id"] is not None]
+    negatives = [r for r in records if r["etalon_id"] is None]
+
+    def strict_candidates(r: dict) -> list[str]:
+        return r["candidates"] if r["decision"] in ("answer", "answer_soft") else []
+
+    top1_hits = sum(1 for r in positives if strict_candidates(r)[:1] == [r["etalon_id"]])
+    top3_hits = sum(1 for r in positives if r["etalon_id"] in strict_candidates(r)[:3])
+    top1 = top1_hits / len(positives) if positives else 0.0
+    top3 = top3_hits / len(positives) if positives else 0.0
+
+    rejected_pos = sum(1 for r in positives if not strict_candidates(r))
+    rejected_neg = sum(1 for r in negatives if not strict_candidates(r))
+    n_rejects = rejected_pos + rejected_neg
+    reject_precision = rejected_neg / n_rejects if n_rejects else 0.0
+    reject_recall = rejected_neg / len(negatives) if negatives else 0.0
+
+    return {
+        "n": len(records),
+        "n_positive": len(positives),
+        "n_negative": len(negatives),
+        "top1": top1,
+        "top3": top3,
+        "reject_precision": reject_precision,
+        "reject_recall": reject_recall,
+    }
+    # END_BLOCK_STRICT
 
 
 def _print_summary(report: dict[str, Any], n_positive: int, n_negative: int) -> None:
@@ -232,6 +287,21 @@ def _print_summary(report: dict[str, Any], n_positive: int, n_negative: int) -> 
         pos = report["decision_counts"]["positive"][d]
         neg = report["decision_counts"]["negative"][d]
         print(f"  {d}: positive={pos} negative={neg}")
+
+    # Принятые негативы (candidates непустой в обычной проекции) = answer+answer_soft (уверенные)
+    # + confirm/ask_city/ask_house (переспросы); ask_street/reject уже проецируются в [] (readme §3).
+    neg_dc = report["decision_counts"]["negative"]
+    confident = neg_dc["answer"] + neg_dc["answer_soft"]
+    reask = neg_dc["confirm"] + neg_dc["ask_city"] + neg_dc["ask_house"]
+    accepted = confident + reask
+    print(f"\nпринятые негативы (candidates != []): {accepted}")
+    print(f"  уверенные (answer+answer_soft): {confident}")
+    print(f"  переспросы (confirm+ask_city+ask_house): {reask}")
+
+    strict = strict_projection_metrics(report["records"])
+    print("\nстрогая проекция (confirm/ask_* -> [], т.е. только answer/answer_soft оставляют candidates):")
+    print(f"  top1={strict['top1']:.4f} top3={strict['top3']:.4f} "
+          f"reject_precision={strict['reject_precision']:.4f} reject_recall={strict['reject_recall']:.4f}")
     # END_BLOCK_PRINT
 
 
@@ -320,7 +390,7 @@ def render_markdown(report: dict[str, Any], n_positive: int, n_negative: int) ->
 # END_CONTRACT: main
 def main() -> None:
     # START_BLOCK_ARGS
-    argp = argparse.ArgumentParser(description="Разбор ошибок Matcher на labeled (A4, T-005)")
+    argp = argparse.ArgumentParser(description="Разбор ошибок Matcher на labeled (A4)")
     argp.add_argument("--adresses", required=True)
     argp.add_argument("--etalon", required=True)
     argp.add_argument("--N", type=float, default=10, help="стоимость ложного answer в переспросах (N4)")

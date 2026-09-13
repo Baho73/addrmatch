@@ -2,9 +2,9 @@
 #   PURPOSE: Симулировать дозапрос (docs/concept.md §6, H12): после ask_house/ask_city подать
 #            второй match() с верным слотом-id и проверить, что диалог разрешается.
 #   SCOPE: CLI-скрипт над Matcher; не трогает addrmatch/*. Только позитивные строки labeled (у
-#          негативов нет истинного etalon_id, сравнивать не с чем). Естественные сценарии (T-007,
-#          ask_house/ask_city как их даёт дефолтный match()) статистически бедны (n~12/n~4 на 500
-#          строк) - T-007b добавляет форсированные сценарии с большим n: forced_house (дом срезан
+#          негативов нет истинного etalon_id, сравнивать не с чем). Естественные сценарии
+#          (ask_house/ask_city как их даёт дефолтный match()) статистически бедны (n~12/n~4 на 500
+#          строк) - добавлены форсированные сценарии с большим n: forced_house (дом срезан
 #          из raw у КАЖДОГО позитива) и forced_city (город обнулён у КАЖДОГО позитива).
 #   DEPENDS: M-MATCHER, M-PARSER (DEFAULT_STREET_TYPES, parse - только для среза дома из raw,
 #            эквивалент того, что Matcher уже делает внутри - без нового связывания)
@@ -15,7 +15,7 @@
 #   load_jsonl - чтение JSONL (UTF-8), как в run.py
 #   strip_house - raw -> (raw без дома и хвоста после него, распознанный дом) по ParseResult
 #   simulate - естественные + форсированные сценарии по позитивным строкам -> счётчики H12
-#   main - CLI: --adresses/--etalon/--N, печать JSON, sys.exit(0|1) по целям H12/T-007b
+#   main - CLI: --adresses/--etalon/--N, печать JSON, sys.exit(0|1) по целям H12
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -39,7 +39,7 @@
 #   forced_house/forced_city) - ниже MIN_N "мало данных", не провал.
 # END_CHANGE_SUMMARY
 
-"""tools/simulate_dialog.py — симуляция дозапроса H12 (docs/concept.md §6, plan.xml T-007/T-007b)."""
+"""tools/simulate_dialog.py — симуляция дозапроса H12 (docs/concept.md §6)."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ from addrmatch.parser import DEFAULT_STREET_TYPES, parse  # noqa: E402
 logger = logging.getLogger("addrmatch.simulate_dialog")
 
 GOAL = 0.95
-MIN_N = 20  # ниже - "мало данных" (не статистика), не провал (T-007b п.4); одна доля на все 4 метрики
+MIN_N = 20  # ниже - "мало данных" (не статистика), не провал; одна доля на все 4 метрики
 
 
 # START_CONTRACT: load_jsonl
@@ -82,7 +82,7 @@ def load_jsonl(path: str) -> list[dict]:
 
 
 # START_CONTRACT: strip_house
-#   PURPOSE: Срезать house-токен и всё после него из raw (T-007b forced_house), используя
+#   PURPOSE: Срезать house-токен и всё после него из raw (форсированный сценарий forced_house), используя
 #            ParseResult: city_hint+street_type+street — ровно tokens[:house_idx] по контракту
 #            parser.py §5.2 (street_types — тождественная карта, канонический тип == токену;
 #            city_hint/street — verbatim join исходных токенов, без трансформации, в отличие от
@@ -104,8 +104,8 @@ def strip_house(raw: str, channel: str) -> tuple[str | None, str | None]:
 
 
 # START_CONTRACT: house_parses
-#   PURPOSE: Проверить, что строка (обычно etalon.house) сама по себе разбирается как дом (T-007b
-#            excluded_bad_etalon) — round-trip той же цепочкой, что видит второй вызов match():
+#   PURPOSE: Проверить, что строка (обычно etalon.house) сама по себе разбирается как дом
+#            (excluded_bad_etalon) — round-trip той же цепочкой, что видит второй вызов match():
 #            normalize+parse должны вернуть ровно тот же дом, что Index кладёт в houses[] при
 #            загрузке (norm_house(row["house"]) — verbatim lower/strip, без токенизации). Простое
 #            "house is not None" недостаточно: "10комната 513" парсится в house="513" (не None,
@@ -124,7 +124,7 @@ def house_parses(house_text: str) -> bool:
 
 
 # START_CONTRACT: simulate
-#   PURPOSE: Прогнать естественные и форсированные (T-007b) сценарии дозапроса по позитивным
+#   PURPOSE: Прогнать естественные и форсированные сценарии дозапроса по позитивным
 #            строкам labeled (H12).
 #   INPUTS: { rows: list[dict] - adresses_labeled (id/channel/city/raw_adress/etalon_id), etalon:
 #             list[dict] - эталонный справочник, N: float - стоимость ложного answer (N4) }
@@ -154,7 +154,7 @@ def simulate(rows: list[dict], etalon: list[dict], N: float = 10.0) -> dict[str,
         if r1.decision == "ask_house":
             true_house = true_etalon.get("house")
             if not true_house or not house_parses(true_house):
-                # T-007b: etalon.house сам не разбирается как дом (напр. "10комната 513") -
+                # etalon.house сам не разбирается как дом (напр. "10комната 513") -
                 # строка выкидывается из знаменателя естественного ask_house, а не считается провалом.
                 excluded_bad_etalon.append(row["id"])
             else:
@@ -244,7 +244,7 @@ def simulate(rows: list[dict], etalon: list[dict], N: float = 10.0) -> dict[str,
 
 
 # START_CONTRACT: main
-#   PURPOSE: CLI H12/T-007b: прогнать simulate(), напечатать JSON, вернуть код по достижению целей.
+#   PURPOSE: CLI H12: прогнать simulate(), напечатать JSON, вернуть код по достижению целей.
 #   INPUTS: { --adresses: путь к labeled JSONL, --etalon: путь к эталону JSONL, --N: стоимость
 #             ложного answer (N4, default 10) }
 #   OUTPUTS: none (печатает один JSON-объект в stdout)
@@ -252,7 +252,7 @@ def simulate(rows: list[dict], etalon: list[dict], N: float = 10.0) -> dict[str,
 # END_CONTRACT: main
 def main() -> None:
     # START_BLOCK_ARGS
-    parser = argparse.ArgumentParser(description="addrmatch tools/simulate_dialog.py — H12/T-007b")
+    parser = argparse.ArgumentParser(description="addrmatch tools/simulate_dialog.py — H12")
     parser.add_argument("--adresses", required=True, help="JSONL с размеченными строками")
     parser.add_argument("--etalon", required=True, help="JSONL с эталонным справочником")
     parser.add_argument("--N", type=float, default=10.0, help="стоимость ложного answer в переспросах (N4)")

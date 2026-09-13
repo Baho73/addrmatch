@@ -1,7 +1,7 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Оценить объект-кандидат (имя × город × тип) вероятностью "это верный объект" (§5.4).
 #   SCOPE: Таблица фичей FEATURES (контракт, общий для ManualRanker и LogregRanker) + ManualRanker
-#          - ручные веса через сигмоиду, explain() раскладывает скор по сигналам. LogregRanker (T-006)
+#          - ручные веса через сигмоиду, explain() раскладывает скор по сигналам. LogregRanker
 #          - sklearn LogisticRegression + Platt/изотоническая калибровка по стратам, JSON save/load.
 #   DEPENDS: none для score()/explain() (принимают готовый словарь фичей). LogregRanker.fit() —
 #            отложенный импорт M-MATCHER (нужен Matcher.candidate_features для обучающей выборки;
@@ -13,11 +13,11 @@
 #   FEATURES - список (имя, значение-по-умолчанию) - контракт фичей Ranker (§5.4)
 #   street_sim - 0.35*lev + 0.35*phon + 0.2*ngram + 0.1*token_set (used by ManualRanker/LogregRanker/matcher/train_ranker)
 #   _feature_value - значение фичи по имени для LogregRanker: "street_sim" - синтетическая (вызов
-#                    street_sim()), остальные - прямой feats.get (T-006b: LogregRanker может учиться
+#                    street_sim()), остальные - прямой feats.get (LogregRanker может учиться
 #                    на подмножестве FEATURES, не только на полном наборе)
 #   ManualRanker - score(feats)->p, explain(feats)->разложение, ручные веса + сигмоида
 #   LogregRanker - score/explain (тот же интерфейс) + fit/save/load; калибровка по стратам + reliability_report;
-#                  fit(C, class_weight, neg_per_query, feature_names) - гиперпараметры T-006b
+#                  fit(C, class_weight, neg_per_query, feature_names) - настраиваемые гиперпараметры
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
@@ -29,9 +29,9 @@
 #   калибратор — fallback); JSON save/load (без pickle); reliability_report() — бины надёжности (H3a).
 #   freq_class: name_freq > median (строго), не >= — большинство имён однообъектны и их name_freq
 #   равен медиане (floor распределения), ">=" клал весь floor в freq_high и вырождал freq_low.
-#   meets_gates: bool, выставляет tools/train_ranker.py по факту H3/H3a/H5, сохраняется в JSON —
-#   run.py включает logreg по умолчанию только если гейты пройдены (иначе manual, см. п.7 плана:
-#   в этом прогоне (seed=42) H5 не сошёлся — logreg хуже manual по всем метрикам run.py, см. readme).
+#   meets_gates: bool, выставляет tools/train_ranker.py по факту H3/H3a/H5, сохраняется в JSON как
+#   отметка результата обучения — run.py без флага всегда использует manual и это поле не читает:
+#   даже когда гейты сходятся на val, на полном прогоне 500 строк логрег хуже ручных весов (см. readme §3).
 #   C-ADDRMATCH-PHASE-A T-006b: диагноз T-006 — class_weight=balanced при перекосе 1:14.6
 #   (296 позитивов/4327 негативов) двигал границу к похожим-но-неверным кандидатам; коррелированные
 #   lev/phon/ngram/token_set давали нестабильные веса (ngram +6.47). Правки: (1) _build_training_examples
@@ -41,8 +41,8 @@
 #   настраиваемы (feature_names — подмножество FEATURE_NAMES + синтетическая "street_sim", см.
 #   _feature_value); coef/feature_names модели теперь пара переменной длины (не обязательно все
 #   FEATURES) — save/load хранят и проверяют feature_names модели, а не жёстко глобальный FEATURE_NAMES.
-#   Итог трёх прогонов (см. train_ranker.py --C/--class-weight/--neg-per-query) — таблица в отчёте
-#   воркера; финальный выбор see meets_gates в ranker_model.json.
+#   Итог трёх прогонов (см. train_ranker.py --C/--class-weight/--neg-per-query) — C=0.3/balanced/10
+#   как дефолт; финальный выбор ранкера — по полному прогону run.py, а не по meets_gates (см. readme §3).
 # END_CHANGE_SUMMARY
 
 """ranker.py — Ranker.score(features) -> p (docs/concept.md §5.4)."""
@@ -60,7 +60,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 
 # Контракт фичей (§5.4): имя -> значение при отсутствии сигнала. Общий для ManualRanker и
-# LogregRanker (T-006) - оба принимают/производят словарь с этими ключами. sim_x_house (T-006) -
+# LogregRanker - оба принимают/производят словарь с этими ключами. sim_x_house -
 # interaction street_sim*house_in_list; ManualRanker её не использует (вес неявно 0), LogregRanker
 # учит вес сам.
 FEATURES: list[tuple[str, float]] = [
@@ -84,9 +84,9 @@ FEATURES: list[tuple[str, float]] = [
 FEATURE_NAMES: list[str] = [name for name, _ in FEATURES]
 FEATURE_DEFAULTS: dict[str, float] = dict(FEATURES)
 
-# T-006b: набор фичей для LogregRanker.fit(feature_names=...) без lev/token_set по отдельности —
+# Набор фичей для LogregRanker.fit(feature_names=...) без lev/token_set по отдельности —
 # заменены агрегатной "street_sim" (синтетическая, см. _feature_value), phon/ngram оставлены как
-# самостоятельные сигналы. Диагноз T-006: lev/phon/ngram/token_set сильно коррелируют (все меряют
+# самостоятельные сигналы. lev/phon/ngram/token_set сильно коррелируют (все меряют
 # похожесть строки улицы) - LogisticRegression на 4 коррелированных входах даёт нестабильные веса
 # (ngram уходил в +6.47 - VIF-эффект), не разрешая противоречивость по отдельности не может отличить.
 FEATURE_NAMES_REDUCED_STREET: list[str] = [
@@ -109,7 +109,7 @@ FEATURE_NAMES_REDUCED_STREET: list[str] = [
 
 # Стартовые ручные веса (§5.4): street_sim = 0.35*lev + 0.35*phon + 0.2*ngram + 0.1*token_set;
 # z = 6*street_sim + 2.5*house_in_list + 1.5*city_match + 0.7*type_match - 0.8*(1-house_found) - 4.
-# T-004 A4-докрутка: изначальная формула max(phon,lev) давала H2 (абляция no_phonetic) с обратным
+# Докрутка по разбору ошибок (A4): изначальная формула max(phon,lev) давала H2 (абляция no_phonetic) с обратным
 # знаком - на этом словаре ASR-шум однобуквенный, ngram и lev уже сами ловят фонетически близкие
 # варианты, phon был чистой избыточностью и иногда проигрывал (см. readme "где ломается"/H2).
 # Взвешенная сумма даёт phon собственный вес независимо от lev - без потери top1 на A3-датасете.
@@ -142,7 +142,7 @@ def street_sim(feats: dict[str, float]) -> float:
 
 
 def _feature_value(name: str, feats: dict[str, float]) -> float:
-    """Значение фичи по имени для LogregRanker (T-006b): "street_sim" - синтетическая агрегатная
+    """Значение фичи по имени для LogregRanker: "street_sim" - синтетическая агрегатная
     (street_sim(feats), не ключ feats), остальные - прямой feats.get с дефолтом из FEATURE_DEFAULTS.
     Позволяет LogregRanker.fit(feature_names=...) обучаться на подмножестве FEATURES + street_sim,
     не расширяя контракт feats, который производит matcher.py."""
@@ -153,7 +153,7 @@ def _feature_value(name: str, feats: dict[str, float]) -> float:
 
 class ManualRanker:
     # START_CONTRACT: __init__
-    #   PURPOSE: Ranker с ручными весами (fallback/baseline для LogregRanker, T-006).
+    #   PURPOSE: Ranker с ручными весами (fallback/baseline для LogregRanker).
     #   INPUTS: { weights: dict|None - переопределение DEFAULT_WEIGHTS (частичное) }
     #   OUTPUTS: none
     #   SIDE_EFFECTS: none
@@ -269,13 +269,13 @@ def _stratum_key(feats: dict[str, float], freq_median: float) -> str:
 def _build_training_examples(matcher: Any, rows: list[dict], neg_per_query: int = 10) -> list[dict[str, Any]]:
     """Прогнать конвейер (Matcher.candidate_features) по labeled-строкам -> обучающие примеры.
 
-    Отсечка на строку: top-`neg_per_query` кандидатов по сырому street_sim (T-006b — было
+    Отсечка на строку: top-`neg_per_query` кандидатов по сырому street_sim (раньше было
     top-10 ∪ {street_sim>=0.5} для позитивных строк и ВСЕ кандидаты для негативных; объединение с
     порогом 0.5 и безлимитные негативы раздували число "лёгких" (уже далёких по рангу) негативов и
     усиливали дисбаланс 1:14.6, который class_weight=balanced сдвигал в пользу похожих-но-неверных
     кандидатов, см. docs/errors-a4.md). Позитив: кандидат, чей houses содержит etalon_id строки
     (y=1), остальные из top-K - y=0. Негатив labeled (etalon_id=None): top-K кандидатов как y=0
-    (docs/concept.md §5.4, plan.xml T-006/T-006b).
+    (docs/concept.md §5.4).
     """
     # START_BLOCK_BUILD
     examples: list[dict[str, Any]] = []
@@ -318,7 +318,7 @@ class LogregRanker:
     #   INPUTS: { coef: list[float] - веса по feature_names, intercept: float, freq_median: float -
     #             порог freq_class для страт калибровки, global_calibrator: dict|None, strata_calibrators:
     #             dict[str, dict]|None, seed: int, feature_names: list[str]|None - подмножество
-    #             FEATURE_NAMES (+ синтетическая "street_sim", T-006b); по умолчанию — все FEATURE_NAMES }
+    #             FEATURE_NAMES (+ синтетическая "street_sim"); по умолчанию — все FEATURE_NAMES }
     #   OUTPUTS: none
     #   SIDE_EFFECTS: none
     # END_CONTRACT: LogregRanker.__init__
@@ -343,10 +343,10 @@ class LogregRanker:
         self.global_calibrator = global_calibrator or {"type": "identity", "n": 0}
         self.strata_calibrators = dict(strata_calibrators or {})
         self.seed = seed
-        # meets_gates: выставляет tools/train_ranker.py по факту H3/H3a/H5 (§5.4, T-006 п.7 - при
-        # срыве тайм-бокса конфиг должен остаться manual); сохраняется в JSON, run.py читает его при
-        # выборе ранкера по умолчанию (--ranker не задан) - "logreg" только если файл есть И гейты
-        # пройдены, иначе manual. Явный --ranker logreg игнорирует флаг (форсировать можно всегда).
+        # meets_gates: выставляет tools/train_ranker.py по факту H3/H3a/H5 (§5.4) - отметка
+        # результата обучения, сохраняется в JSON. run.py без флага всегда использует manual и это
+        # поле не читает: даже когда гейты сходятся на val, на полном прогоне 500 строк логрег хуже
+        # ручных весов (см. readme §3). Явный --ranker logreg включает логрег для экспериментов.
         self.meets_gates: bool = False
         # Транзиентно (не сохраняется в JSON) - train_rows/val_rows/*_examples заполняет fit(),
         # нужны tools/train_ranker.py для метрик train/val и reliability_report по умолчанию.
@@ -406,16 +406,16 @@ class LogregRanker:
         # END_BLOCK_LOGREG_EXPLAIN
 
     # START_CONTRACT: fit
-    #   PURPOSE: Обучить LogregRanker на labeled-строках (§5.4, T-006/T-006b): сплит 75/25
+    #   PURPOSE: Обучить LogregRanker на labeled-строках (§5.4): сплит 75/25
     #            стратифицированный по (channel, is_negative), LogisticRegression(C, class_weight) на
     #            train, калибровка по стратам на val.
     #   INPUTS: { rows: list[dict] - adresses_labeled (id/channel/city/raw_adress/etalon_id), etalon:
     #             list[dict] - эталонный справочник, seed: int, C: float - обратная сила регуляризации
-    #             sklearn LogisticRegression (T-006b, default 0.3 - лучший из 3 прогонов T-006b),
-    #             class_weight: "balanced"|None - T-006b (default "balanced"), neg_per_query: int -
-    #             отсечка кандидатов на строку в _build_training_examples (T-006b, default 10),
+    #             sklearn LogisticRegression (default 0.3 - лучший из трёх прогонов сравнения C),
+    #             class_weight: "balanced"|None (default "balanced"), neg_per_query: int -
+    #             отсечка кандидатов на строку в _build_training_examples (default 10),
     #             feature_names: list[str]|None - подмножество FEATURE_NAMES (+"street_sim") для модели;
-    #             по умолчанию FEATURE_NAMES_REDUCED_STREET (T-006b — street_sim агрегирует
+    #             по умолчанию FEATURE_NAMES_REDUCED_STREET (street_sim агрегирует
     #             lev/token_set вместо их раздельного использования, снимает мультиколлинеарность) }
     #   OUTPUTS: { LogregRanker - обучен и откалиброван; .train_rows/.val_rows/._train_examples/
     #              ._val_examples заполнены для tools/train_ranker.py }
@@ -582,9 +582,9 @@ class LogregRanker:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
         feature_names = payload.get("feature_names") or FEATURE_NAMES
-        # T-006b: модель может быть обучена на подмножестве FEATURE_NAMES (+ синтетическая
+        # Модель может быть обучена на подмножестве FEATURE_NAMES (+ синтетическая
         # "street_sim") - проверяем, что каждое имя известно текущему коду, а не точное совпадение
-        # с полным FEATURE_NAMES (было в T-006, когда LogregRanker всегда использовал все FEATURES).
+        # с полным FEATURE_NAMES (раньше LogregRanker всегда использовал все FEATURES).
         valid_names = set(FEATURE_NAMES) | {"street_sim"}
         if not all(name in valid_names for name in feature_names):
             raise ValueError("LogregRanker.load: в модели есть неизвестное имя фичи (не FEATURE_NAMES/street_sim)")

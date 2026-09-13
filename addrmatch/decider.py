@@ -50,7 +50,7 @@ class DecisionResult:
     missing_slot: str | None = None
     options: list[Any] = field(default_factory=list)
     slots_resolved: dict[str, Any] = field(default_factory=dict)
-    rule: int = 0  # T-007: номер сработавшего правила §5.5 (1..6), для explain["decision_rule"]
+    rule: int = 0  # номер сработавшего правила §5.5 (1..6), для explain["decision_rule"]
 
 
 # START_CONTRACT: to_tz
@@ -123,7 +123,7 @@ class Decider:
     # START_CONTRACT: __init__
     #   PURPOSE: Зафиксировать стоимость ошибки N и пороги решений (§5.5).
     #   INPUTS: { N: float - "один ложный answer = N переспросов" (N4), c_confirm: float - память
-    #             стоимости confirm (не используется в пороге, зафиксирован 0.6 по брифу T-004),
+    #             стоимости confirm (не используется в пороге, зафиксирован вручную на 0.6),
     #             c_soft: float - снижение цены ошибки для answer_soft }
     #   OUTPUTS: none
     #   SIDE_EFFECTS: none
@@ -134,7 +134,7 @@ class Decider:
         self.c_soft = c_soft
         self.theta_answer = N / (N + 1.0)
         self.theta_soft = 1.0 - 1.0 / (N * (1.0 - c_soft))
-        self.theta_confirm = 0.6  # зафиксировано по брифу T-004 (не выводится из c_confirm)
+        self.theta_confirm = 0.6  # зафиксировано вручную, не выводится из c_confirm (см. readme §2 «Пороги»)
 
     def _should_ask_city(self, leader: dict, ranked_sorted: list[dict], city_res: Any) -> bool:
         if getattr(city_res, "status", "none") not in ("none", "unresolved", "ambiguous"):
@@ -145,8 +145,8 @@ class Decider:
         median_freq = statistics.median(r["name_freq"] for r in ranked_sorted)
         if leader["name_freq"] < median_freq:
             return False
-        # T-007: минимальный порог уверенности лидера-имени - без него мусор с похожей-но-неверной
-        # частой улицей уходил в ask_city вместо ask_street/reject (докрутка T-006, см. CHANGE_SUMMARY).
+        # Минимальный порог уверенности лидера-имени - без него мусор с похожей-но-неверной
+        # частой улицей уходил в ask_city вместо ask_street/reject (см. CHANGE_SUMMARY).
         return leader.get("street_sim", 0.0) >= 0.75 or leader["p"] >= self.theta_confirm
 
     def _city_options(self, leader: dict, ranked_sorted: list[dict]) -> list[str]:
@@ -207,7 +207,7 @@ class Decider:
         elif leader is not None and leader["p"] >= self.theta_confirm and house_ok:
             # Правило 4: answer / answer_soft / confirm (дом подтверждён — проверяется раньше
             # ask_house, порядок между 3/4 не влияет на исход, т.к. условия по house_ok
-            # взаимоисключающие; см. ниже T-005 про требование resolved у Правила 3).
+            # взаимоисключающие; см. ниже про требование resolved у Правила 3).
             rule = 4
             p1 = leader["p"]
             if p1 >= self.theta_answer:
@@ -223,7 +223,7 @@ class Decider:
             and leader["p"] >= self.theta_confirm
             and getattr(city_res, "status", "none") == "resolved"
         ):
-            # Правило 3: ask_house. T-005-докрутка: раньше срабатывало при любом city_status,
+            # Правило 3: ask_house. Докрутка: раньше срабатывало при любом city_status,
             # включая none/unresolved - на labeled 19 негативов (город не из эталона/не
             # разрешён) получали house-опции и засчитывались как "принятый" ответ (reject_recall
             # 0.65->35 accepted_negative). На всех 400 позитивах ни один настоящий ask_house не

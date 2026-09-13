@@ -1,6 +1,6 @@
 # START_MODULE_CONTRACT
 #   PURPOSE: Проверить файл predictions на соответствие формату ТЗ (id/candidates/scores).
-#   SCOPE: CLI-валидатор для приёмки T-001 (число строк, ключи, длины, ограничение candidates ≤ 3).
+#   SCOPE: CLI-валидатор формата ТЗ (число строк, ключи, длины, ограничение candidates ≤ 3).
 #   DEPENDS: none
 #   LINKS: V-M-RUN
 # END_MODULE_CONTRACT

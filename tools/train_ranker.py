@@ -1,5 +1,5 @@
 # START_MODULE_CONTRACT
-#   PURPOSE: Обучить LogregRanker (T-006, docs/concept.md §5.4) на adresses_labeled.jsonl, откалибровать
+#   PURPOSE: Обучить LogregRanker (docs/concept.md §5.4) на adresses_labeled.jsonl, откалибровать
 #            по стратам, напечатать reliability_report и метрики val (H3/H3a/H5), сохранить JSON-модель.
 #   SCOPE: CLI-обёртка над LogregRanker.fit()/save(); собственный BruteForceIndex — только для
 #          диагностики негативов тип-2 (has_address_cues), как в tools/errors_report.py.
@@ -13,24 +13,24 @@
 #   row_top1 - top1 по подмножеству labeled-строк (train/val) для гейта H3a (расхождение <= 5 п.п.)
 #   val_gates - H3 (ошибки answer/answer_soft, покрытие) и H5 (негативы тип-2 -> reject/ask_street) на val
 #   main - CLI: --adresses --etalon --seed [--out] [--N]; fit -> reliability_report -> гейты H3/H3a/H5
-#          -> ranker.meets_gates -> save (JSON несёт meets_gates - run.py включает logreg по умолчанию
-#          только если гейты пройдены)
+#          -> ranker.meets_gates -> save (JSON несёт meets_gates как отметку результата обучения;
+#          run.py без флага всегда использует manual и это поле не читает)
 # END_MODULE_MAP
 #
 # START_CHANGE_SUMMARY
 #   C-ADDRMATCH-PHASE-A T-006: train_ranker.py — обучение LogregRanker, reliability_report, гейты
 #   H3/H3a/H5 на val-сплите (75/25, стратифицированный по channel x is_negative внутри LogregRanker.fit).
-#   Прогон seed=42: H3 (0 ошибок answer/answer_soft, покрытие 0.97) и H3a (max_dev 0.003, gap 4.3 п.п.)
-#   сходятся; H5 не сходится (негативы тип-2 -> reject/ask_street 0.40 вместо >= 0.85) — logreg хуже
-#   ManualRanker по top1/top3/reject_precision/reject_recall на полном run.py (docs/readme "что дальше").
-#   meets_gates=False -> run.py по умолчанию остаётся на manual (T-006 п.7 плана).
+#   Прогон seed=42 (закреплённые версии библиотек, requirements.txt): H3 (0 ошибок answer/answer_soft,
+#   покрытие 0.97), H3a (max_dev 0.014, gap 3.6 п.п.) и H5 (негативы тип-2 -> reject/ask_street 0.93)
+#   сходятся — meets_gates=True. Но на полном run.py (500 строк) logreg хуже ManualRanker по
+#   top1/top3/reject_precision (docs/readme §3) -> по умолчанию остаётся manual независимо от meets_gates.
 #   C-ADDRMATCH-PHASE-A T-006b: + флаги --C, --class-weight none|balanced, --neg-per-query K
 #   (пробрасываются в LogregRanker.fit, T-006 диагноз — class_weight=balanced при дисбалансе 1:14.6
 #   и коррелированных lev/phon/ngram/token_set); summary теперь несёт C/class_weight/neg_per_query/
 #   n_features прогона для сравнения вариантов.
 # END_CHANGE_SUMMARY
 
-"""tools/train_ranker.py — обучение LogregRanker (docs/concept.md §5.4, plan.xml T-006)."""
+"""tools/train_ranker.py — обучение LogregRanker (docs/concept.md §5.4)."""
 
 from __future__ import annotations
 
@@ -145,20 +145,20 @@ def val_gates(matcher: Matcher, val_rows: list[dict], diag_index: BruteForceInde
 # END_CONTRACT: main
 def main() -> None:
     # START_BLOCK_ARGS
-    argp = argparse.ArgumentParser(description="Обучение LogregRanker (T-006, docs/concept.md §5.4)")
+    argp = argparse.ArgumentParser(description="Обучение LogregRanker (docs/concept.md §5.4)")
     argp.add_argument("--adresses", required=True)
     argp.add_argument("--etalon", required=True)
     argp.add_argument("--seed", type=int, default=42)
     argp.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "addrmatch" / "ranker_model.json"))
     argp.add_argument("--N", type=float, default=10, help="стоимость ложного answer в переспросах (N4)")
-    argp.add_argument("--C", type=float, default=0.3, help="C sklearn LogisticRegression (T-006b, default — лучший из 3 прогонов T-006b)")
+    argp.add_argument("--C", type=float, default=0.3, help="C sklearn LogisticRegression (default — лучший из трёх прогонов сравнения)")
     argp.add_argument(
         "--class-weight", default="balanced", choices=["none", "balanced"],
-        help="class_weight LogisticRegression: none|balanced (T-006b, диагноз T-006 — balanced при 1:14.6 сдвигал границу)",
+        help="class_weight LogisticRegression: none|balanced (при дисбалансе 1:14.6 balanced сдвигал границу)",
     )
     argp.add_argument(
         "--neg-per-query", type=int, default=10,
-        help="отсечка кандидатов на строку в обучающей выборке — top-K по street_sim (T-006b)",
+        help="отсечка кандидатов на строку в обучающей выборке — top-K по street_sim",
     )
     args = argp.parse_args()
     # END_BLOCK_ARGS

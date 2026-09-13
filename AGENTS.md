@@ -4,7 +4,7 @@
 address matching, fuzzy matching, phonetic key, rapidfuzz, char n-gram, ASR noise, Russian addresses, ГАР, ФИАС, dialogue clarification, calibrated ranker, logistic regression, run.py metrics
 
 ## Annotation
-Локальная CPU-библиотека сопоставления кривой строки адреса (после ASR или из чата) с эталонным справочником: нормализация, разрез на улицу/дом, три сигнала сходства по словарю имён, калиброванный ранкер, решение для диалога (answer / answer_soft / confirm / ask_city / ask_house / ask_street / reject). Первый потребитель — HR-бот (тестовое задание, 1000 эталонов, 8 городов); целевой масштаб — ГАР по всей России. Концепция: docs/concept.md v0.2; аудит: docs/fpf-audit.md; решения: docs/triz-resolution.md; варианты: docs/approaches.md.
+Локальная CPU-библиотека сопоставления кривой строки адреса (после ASR или из чата) с эталонным справочником: нормализация, разрез на улицу/дом, три сигнала сходства по словарю имён, калиброванный ранкер, решение для диалога (answer / answer_soft / confirm / ask_city / ask_house / ask_street / reject). Первый потребитель — HR-бот (тестовое задание, 1000 эталонов, 8 городов); целевой масштаб — ГАР по всей России. Концепция: docs/concept.md v0.2; аудит: внутренний аудит спецификации; решения: docs/triz-resolution.md; варианты: docs/approaches.md.
 
 ## GRACE 4 Source of Truth
 
